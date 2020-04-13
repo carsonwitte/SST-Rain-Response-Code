@@ -1,22 +1,20 @@
+data_loc = 'C:\Users\ZappaLab\Google Drive\Experiments\2020 SST Rain Response Paper\Data\Working';
 
-
-load SST_rain_comparison_peak_data.mat
-load  SST_rain_comparison_variables2.mat
-
-loc = '/local/data/deadshot1/Analysis/DYNAMO/KT15/IRSST/';
-
+load([data_loc '\SST_rain_comparison_peak_data.mat'])
+load([data_loc '\SST_rain_comparison_variables2.mat'])
 
 % ----------------------------------------------------
 %  Some basic plots
 % ----------------------------------------------------
 
-SST_max = col2(Vars.Max_Response);
-SST_Tmax = col2(Vars.Time_to_Max);
-Rain_Length = col2(Vars.Length_of_Rain_Event);
-Cum_Rain_Rate = col2(Vars.Total_Rain);
-SST0 = col2(Vars.SST0);
+%may need to change these to column vectors at some point
+SST_max = [Vars.Max_Response]; 
+SST_Tmax = [Vars.Time_to_Max];
+Rain_Length = [Vars.Length_of_Rain_Event];
+Cum_Rain_Rate = [Vars.Total_Rain];
+SST0 = [Vars.SST0];
 Max_Response = SST0-SST_max;
-Max_Rain = col2(Vars.Peak);
+Max_Rain = [Vars.Peak];
 Time_to_Peak_Rain = Max_Rain*NaN;
 npeaks = size(Vars,2);
 
@@ -28,7 +26,7 @@ end
 
 
 
-figure
+figure(1);clf
 orient landscape
 
 subplot(2,3,1)
@@ -103,13 +101,13 @@ set(gca,'FontSize',12)
 %set(gcf,'paperposition',[.25 .25 10.5 8])
 %print -dpng Dynamo_RainEvent_histograms.png
 
-return
+%return
 
 
 
 
 
-figure
+figure(2);clf
 orient landscape
 
 subplot(2,3,1)
@@ -164,13 +162,13 @@ WSlow = find(WS < 5);
 WShigh = find(WS > 9);
 WSmed = find(WS <= 9 | WS >= 5);
 
-print -dpng Dynamo_Rain_scatterplots.png
-print -dpsc Dynamo_Rain_scatterplots.ps
+%print -dpng Dynamo_Rain_scatterplots.png
+%print -dpsc Dynamo_Rain_scatterplots.ps
 
 
 
 
-figure
+figure(3);clf
 orient landscape
 
 subplot(2,4,1)
@@ -187,7 +185,7 @@ xlabel('t_{*SST} [minutes]','FontSize',14)
 ylim([0 400])
 set(gca,'FontSize',12)
 
-add_datestamp
+%add_datestamp
 
 
 Max_Rain = SST0*NaN;
@@ -252,9 +250,9 @@ set(gca,'FontSize',12)
 
 
 
-print -dpng Dynamo_Rain_scatterplots_unscaled.png
-print -dpsc Dynamo_Rain_scatterplots_unscaled.ps
-saveas(gcf,'Dynamo_Rain_scatterplots_unscaled.fig','fig')
+%print -dpng Dynamo_Rain_scatterplots_unscaled.png
+%print -dpsc Dynamo_Rain_scatterplots_unscaled.ps
+%saveas(gcf,'Dynamo_Rain_scatterplots_unscaled.fig','fig')
 %orient portrait
 %set(gcf,'papersize',[11 8.5])
 %set(gcf,'paperposition',[.25 .25 10.5 8])
@@ -262,45 +260,43 @@ saveas(gcf,'Dynamo_Rain_scatterplots_unscaled.fig','fig')
 
 
 
-figure
-orient landscape
-subplot(2,2,1)
-plot(col2(Vars.SST0)-col2(Vars.Max_Response),-1*col2(Vars.Tair_response),'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
-ylabel('\DeltaSST [\circC]','FontSize',14)
-ylabel('\DeltaT_{air}[\circC]','FontSize',14)
+%figure(4);clf
+%orient landscape
+%subplot(2,2,1)
+%plot([Vars.SST0]-[Vars.Max_Response],-1*[Vars.Tair],'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
+%ylabel('\DeltaSST [\circC]','FontSize',14)
+%ylabel('\DeltaT_{air}[\circC]','FontSize',14)
 
-RHFsum = zeros(npeaks,1);
-for i = 1:npeaks
-   RHFsum(i) = sum(Vars(i).RHF);
-end
+%RHFsum = zeros(npeaks,1);
+%for i = 1:npeaks
+%   RHFsum(i) = sum(Vars(i).RHF);
+%end
 
-subplot(2,2,2)
+%subplot(2,2,2)
 %plot(RHFsum,col2(Vars.Tair_response),'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
-semilogx(-1*RHFsum,col2(Vars.Tair_response),'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
-ylabel('\DeltaT_{air}[\circC]','FontSize',14)
-xlabel('Latent Heat Flux Due to Rain','FontSize',14)
+%semilogx(-1*RHFsum,[Vars.Tair_response],'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
+%ylabel('\DeltaT_{air}[\circC]','FontSize',14)
+%xlabel('Latent Heat Flux Due to Rain','FontSize',14)
 
-subplot(2,2,3)
-semilogx(RHFsum,col2(Vars.SST0)-col2(Vars.Max_Response),'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
-ylabel('\DeltaSST [\circC]','FontSize',14)
-xlabel('Latent Heat Flux Due to Rain','FontSize',14)
-
-
-print -dpng Dynamo_Rain_scatterplots_unscaled2.png
-print -dpsc Dynamo_Rain_scatterplots_unscaled2.ps
-saveas(gcf,'Dynamo_Rain_scatterplots_unscaled2.fig','fig')
+%subplot(2,2,3)
+%semilogx(RHFsum,[Vars.SST0]-[Vars.Max_Response],'o','MarkerSize',4,'MarkerEdgeColor','blue','MarkerFaceColor','blue')
+%ylabel('\DeltaSST [\circC]','FontSize',14)
+%xlabel('Latent Heat Flux Due to Rain','FontSize',14)
 
 
+%print -dpng Dynamo_Rain_scatterplots_unscaled2.png
+%print -dpsc Dynamo_Rain_scatterplots_unscaled2.ps
+%saveas(gcf,'Dynamo_Rain_scatterplots_unscaled2.fig','fig')
 
 
 
-return
-
-WSlow = find(WS < 5);
-WShigh = find(WS > 9);
-WSmed = find(WS <= 9 | WS >= 5);
 
 
+%return
+
+%WSlow = find(WS < 5);
+%WShigh = find(WS > 9);
+%WSmed = find(WS <= 9 | WS >= 5);
 
 
 
@@ -308,7 +304,9 @@ WSmed = find(WS <= 9 | WS >= 5);
 
 
 
-figure
+
+
+figure(5);clf
 orient landscape
 
 subplot(2,3,1)
@@ -446,7 +444,7 @@ for j = 1:npeaks
       TRel2 = Vars(j).TRel21*24*60./Vars(j).Time_to_Max;
       SST = Vars(j).SST_smoothed;
       indx1 = 1+beg_pad2:-1:1+beg_pad2-18;
-      SST = SST - nmean(SST(indx1));
+      SST = SST - nanmean(SST(indx1));
 
       indx2 = NaN*ones(length(Tair),1);
       for k = 1:length(TRel1)
@@ -480,25 +478,20 @@ end
 
 
 for i = 1:length(bins)
-   nmnTair(i) = nmean(Bins(i).Tair);
-   nsdTair(i) = nstd(Bins(i).Tair);
-   nmnTbulk(i) = nmean(Bins(i).Tbulk);
-   nsdTbulk(i) = nstd(Bins(i).Tbulk);
-   nmnU10r(i) = nmean(Bins(i).U10r);
-   nsdU10r(i) = nstd(Bins(i).U10r);
-   nmnSST(i) = nmean(Bins(i).SST);
-   nsdSST(i) = nstd(Bins(i).SST);
+   nmnTair(i) = nanmean(Bins(i).Tair);
+   nsdTair(i) = nanstd(Bins(i).Tair);
+   nmnTbulk(i) = nanmean(Bins(i).Tbulk);
+   nsdTbulk(i) = nanstd(Bins(i).Tbulk);
+   nmnU10r(i) = nanmean(Bins(i).U10r);
+   nsdU10r(i) = nanstd(Bins(i).U10r);
+   nmnSST(i) = nanmean(Bins(i).SST);
+   nsdSST(i) = nanstd(Bins(i).SST);
 end
 
 
-
-
-
-
-
-figure
+figure(6);clf
 orient tall
-ax(1) = subplot(4,1,1)
+ax(1) = subplot(4,1,1);
 plot(bins,nmnTair,'k-o','MarkerSize',5','MarkerFaceColor','r','MarkerEdgeColor','r','linewidth',1)
 hold on
 for i = 1:length(bins)
@@ -508,10 +501,10 @@ title('Dynamo Rain Events','FontSize',16)
 ylabel('\DeltaT_{air} [\circC]','FontSize',14)
 set(gca,'FontSize',12)
 ylim([-3 1])
-hline(0)
+line([-3, 10],[0,0])
 
 
-ax(2) = subplot(4,1,2)
+ax(2) = subplot(4,1,2);
 plot(bins,nmnU10r,'k-o','MarkerSize',5','MarkerFaceColor','r','MarkerEdgeColor','r','linewidth',1)
 hold on
 for i = 1:length(bins)
@@ -520,9 +513,9 @@ end
 ylabel('\DeltaU_{r_{10}} [m/s]','FontSize',14)
 set(gca,'FontSize',12)
 ylim([-4 4])
-hline(0)
+line([-3, 10],[0,0])
 
-ax(3) = subplot(4,1,3)
+ax(3) = subplot(4,1,3);
 plot(bins,nmnTbulk,'k-o','MarkerSize',5','MarkerFaceColor','r','MarkerEdgeColor','r','linewidth',1)
 hold on
 for i = 1:length(bins)
@@ -531,10 +524,10 @@ end
 ylabel('\DeltaT_{bulk} [\circC]','FontSize',14)
 set(gca,'FontSize',12)
 ylim([-0.5 0.2])
-hline(0)
+line([-3, 10],[0,0])
 
 
-ax(4) = subplot(4,1,4)
+ax(4) = subplot(4,1,4);
 plot(bins,nmnSST,'k-o','MarkerSize',5','MarkerFaceColor','r','MarkerEdgeColor','r','linewidth',1)
 hold on
 for i = 1:length(bins)
@@ -543,19 +536,19 @@ end
 ylabel('\DeltaSST_{skin} [\circC]','FontSize',14)
 xlabel('(T-T_0)/t_{*SST}','FontSize',14)
 ylim([-0.8 0.4])
-hline(0)
+line([-3, 10],[0,0])
 set(gca,'FontSize',12,'ytick',[-0.8:0.4:0.4])
 linkaxes(ax,'x')
 xlim([-15 40])
 
-print -dpng Dynamo_RainEvent_Composite.png
-print -dpsc Dynamo_RainEvent_Composite.ps
+%print -dpng Dynamo_RainEvent_Composite.png
+%print -dpsc Dynamo_RainEvent_Composite.ps
 
 set(ax(2),'xlim',[-3 10])
 
-saveas(gcf,'Dynamo_RainEvent_Composite_zoom.fig','fig')
-print -dpng Dynamo_RainEvent_Composite_zoom.png
-print -dpsc Dynamo_RainEvent_Composite_zoom.ps
+%saveas(gcf,'Dynamo_RainEvent_Composite_zoom.fig','fig')
+%print -dpng Dynamo_RainEvent_Composite_zoom.png
+%print -dpsc Dynamo_RainEvent_Composite_zoom.ps
 
 
 
@@ -641,7 +634,7 @@ for j = 1:npeaks
       TRel2 = Vars(j).TRel21*24*60;
       SST = Vars(j).SST_smoothed;
       indx1 = 1+beg_pad2:-1:1+beg_pad2-18;
-      SST = SST - nmean(SST(indx1));
+      SST = SST - nanmean(SST(indx1));
 
       indx2 = NaN*ones(length(Tair),1);
       for k = 1:length(TRel1)
@@ -675,21 +668,21 @@ for j = 1:npeaks
 end
 
 for i = 1:length(bins)
-   nmnTair(i) = nmean(Bins(i).Tair);
-   nsdTair(i) = nstd(Bins(i).Tair);
-   nmnTbulk(i) = nmean(Bins(i).Tbulk);
-   nsdTbulk(i) = nstd(Bins(i).Tbulk);
-   nmnU10r(i) = nmean(Bins(i).U10r);
-   nsdU10r(i) = nstd(Bins(i).U10r);
-   nmnSST(i) = nmean(Bins(i).SST);
-   nsdSST(i) = nstd(Bins(i).SST);
+   nmnTair(i) = nanmean(Bins(i).Tair);
+   nsdTair(i) = nanstd(Bins(i).Tair);
+   nmnTbulk(i) = nanmean(Bins(i).Tbulk);
+   nsdTbulk(i) = nanstd(Bins(i).Tbulk);
+   nmnU10r(i) = nanmean(Bins(i).U10r);
+   nsdU10r(i) = nanstd(Bins(i).U10r);
+   nmnSST(i) = nanmean(Bins(i).SST);
+   nsdSST(i) = nanstd(Bins(i).SST);
 end
 
 
 
 
 
-figure
+figure(7);clf
 orient tall
 ax(1) = subplot(4,1,1)
 plot(bins,nmnTair,'-o','MarkerSize',5')
@@ -700,7 +693,7 @@ end
 title('Dynamo Rain Events','FontSize',14)
 ylabel('Tair [\circC]','FontSize',14)
 ylim([-3 2])
-hline(0)
+%yline(0)
 
 
 ax(2) = subplot(4,1,2)
@@ -711,7 +704,7 @@ for i = 1:length(bins)
 end
 ylabel('U_r_{10} [m/s]','FontSize',14)
 ylim([-6 6])
-hline(0)
+%yline(0)
 
 ax(3) = subplot(4,1,3)
 plot(bins,nmnTbulk,'-o','MarkerSize',5')
@@ -721,7 +714,7 @@ for i = 1:length(bins)
 end
 ylabel('T_{bulk} [\circC]','FontSize',14)
 %ylim([-0.6 0.4])
-hline(0)
+%yline(0)
 
 
 ax(4) = subplot(4,1,4)
@@ -733,17 +726,17 @@ end
 ylabel('SST_{skin} [\circC]','FontSize',14)
 xlabel('Time from Event Initiation [minutes]','FontSize',14)
 ylim([-0.8 0.4])
-hline(0)
+%yline(0)
 linkaxes(ax,'x')
 xlim([-50 950])
 
-print -dpng Dynamo_RainEvent_Composite_time_unscaled.png
-print -dpsc Dynamo_RainEvent_Composite_time_unscaled.ps
+%print -dpng Dynamo_RainEvent_Composite_time_unscaled.png
+%print -dpsc Dynamo_RainEvent_Composite_time_unscaled.ps
 
-set(ax(2),'xlim',[-50 310])
+%set(ax(2),'xlim',[-50 310])
 
-print -dpng Dynamo_RainEvent_Composite_time_unscaled_zoom.png
-print -dpsc Dynamo_RainEvent_Composite_time_unscaled_zoom.ps
+%print -dpng Dynamo_RainEvent_Composite_time_unscaled_zoom.png
+%print -dpsc Dynamo_RainEvent_Composite_time_unscaled_zoom.ps
 
 
 

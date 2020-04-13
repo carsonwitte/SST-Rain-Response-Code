@@ -5,9 +5,9 @@
 % First step in the process!
 
 
-loc = '/local/data/deadshot1/Analysis/DYNAMO/KT15/IRSST/';
+loc = 'C:\Users\ZappaLab\Google Drive\Experiments\2020 SST Rain Response Paper\Data\Working';
 
-load KT15_corrected_SST_10sec_for_distribution.mat
+load([loc '\KT15_corrected_SST_10sec_for_distribution.mat'])
 
 SkinSST = SST;
 yearday = yday;
