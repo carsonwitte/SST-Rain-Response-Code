@@ -30,6 +30,7 @@ def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment)
     # Outputs: this function does not have any python outputs. Instead it saves the imported data
     # as a netcdf in output_path. The metadata will include:
     #     - the serial numbers of the instruments
+    #     - the name of the experiment
     #     - the time period of the acquisition
     #
     # Dependencies:
