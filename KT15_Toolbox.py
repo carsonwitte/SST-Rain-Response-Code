@@ -36,7 +36,6 @@ def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment)
     # Dependencies:
     #    pandas
     #    xarray
-    # asodfjaosdijjdfoij
     # --------------------------------------------------------------------------------------------
 
     #import a KT15 labview data file:
