@@ -1,13 +1,15 @@
-# KT15_Toolbox.py
-#
-# This python file contains functions for importing, calibrating, and sky-correcting Heitronics KT-15 infrared radiometers:
-#   1. KT15_importraw: import KT15 data from LabView output (Level 0) and output clean Level 1 product
-#   2. KT15_labcalibration: import l1 products of blackbody calibration runs and output linear calibration coefficients (slope and y-intercept)
-#   3. KT15_calibrate_skycorrect82: import l1 products of data runs, apply lab calibration and sky correction. Sky correction is specific to the KT15.82 8um-14um band radiometers; additional functions will be needed for other sky corrections.
-#
-# To import these functions into a jupyter notebook or other python IDE, run the command:
-#   from KT15_Toolbox import KT15_importraw, KT15_labcalibration, KT15_calibrate_skycorrect82
-# You will then be able to call each function as if they were defined within your notebook.
+"""
+KT15_Toolbox.py
+
+This python file contains functions for importing, calibrating, and sky-correcting Heitronics KT-15 infrared radiometers:
+   1. KT15_importraw: import KT15 data from LabView output (Level 0) and output clean Level 1 product
+   2. KT15_labcalibration: import l1 products of blackbody calibration runs and output linear calibration coefficients (slope and y-intercept)
+   3. KT15_calibrate_skycorrect82: import l1 products of data runs, apply lab calibration and sky correction. Sky correction is specific to the KT15.82 8um-14um band radiometers; additional functions will be needed for other sky corrections.
+
+To import these functions into a jupyter notebook or other python IDE, run the command:
+from KT15_Toolbox import KT15_importraw, KT15_labcalibration, KT15_calibrate_skycorrect82
+You will then be able to call each function as if they were defined within your notebook.
+"""
 
 
 def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment):
@@ -21,8 +23,7 @@ def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment)
     #     data_folder  - a complete filepath to the folder containing the raw data. Relative paths
     #                    and paths to local files will work and may be necessary for speed, but a
     #                    path to a universally accessible server location is best.
-    #     output_path  - a filepath to the output L1 data product. THIS MUST INCLUDE THE DESIRED
-    #                    FILENAME AND .nc EXTENSION!
+    #     output_path  - a filepath to the desired output location of the L1 data product.
     #     sea_serial   - the serial number of the down-looking KT15
     #     sky_serial   - the serial number of the up-looking KT15
     #     experiment   - the name of the experiment (e.g., Falkor19)
@@ -31,29 +32,44 @@ def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment)
     # as a netcdf in output_path. The metadata will include:
     #     - the serial numbers of the instruments
     #     - the name of the experiment
-    #     - the time period of the acquisition
-    #
-    # Dependencies:
-    #    pandas
-    #    xarray
     # --------------------------------------------------------------------------------------------
 
-    #import a KT15 labview data file:
-    kt = pd.read_csv('../Data/Working/Falkor19/KT15/2019_Falkor_325_043435.txt',                                   #filename to read in
-                     delimiter='\s+', skiprows=1, header=None,                                                     #treat whitespace as the delimeter, ignore the header line
-                     usecols=[0,1,2,3,4,5], names=['Date','Time','SeaRef','SeaTemp','SkyRef','SkyTemp'],           #use the first 6 columns, and name them as specified
-                     parse_dates={'DateTime':[0,1]}, index_col=0,                                                  #parse the first two columns as a single DateTime, and make it the index column
-                     na_values=['AMB'],                                                                            #list of other things the parser might encounter in these files, that should be treated like NaNs
-                     dtype={'SeaRef':np.float64, 'SeaTemp':np.float64, 'SkyRef':np.float64, 'SkyTemp':np.float64}, #explicitly specify that data columns must be 64-bit floating point numbers
-                     error_bad_lines=False, warn_bad_lines=True)                                                   #if there is a bad line in the data file, drop it from the file and show a warning, but continue parsing
-    kt.dropna(axis='index',how='any',inplace=True)                                                                 #drop any rows that have a NaN value in them
+    #import the python packages which this function uses
+    import glob
+    import pandas as pd
+    import xarray as xr
+    import numpy as np
 
+    #create list of all text files in data_folder
+    files = glob.glob(data_folder + '\*.txt')
+    #initialize empty list to add dataframes to as we loop through files
+    list = []
+    #loop through files and import
+    for filepath in files:
+        df = pd.read_csv(filepath,                                                                                     #filename to read in
+                         delimiter='\s+', skiprows=1, header=None,                                                     #treat whitespace as the delimeter, ignore the header line
+                         usecols=[0,1,2,3,4,5], names=['Date','Time','SeaRef','SeaTemp','SkyRef','SkyTemp'],           #use the first 6 columns, and name them as specified
+                         parse_dates={'DateTime':[0,1]}, index_col=0,                                                  #parse the first two columns as a single DateTime, and make it the index column
+                         na_values=['AMB','TIMEOUT','ERROR'],                                                          #list of other things the parser might encounter in these files, that should be treated like NaNs
+                         dtype={'SeaRef':np.float64, 'SeaTemp':np.float64, 'SkyRef':np.float64, 'SkyTemp':np.float64}, #explicitly specify that data columns must be 64-bit floating point numbers
+                         error_bad_lines=False, warn_bad_lines=True)                                                   #if there is a bad line in the data file, drop it from the file and show a warning, but continue parsing
+        df.dropna(axis='index',how='any',inplace=True)                                                                 #drop any rows that have a NaN value in them
+        list.append(df)                                                                                                #append this newly imported dataframe to a list of dataframes
+    #concatenate all the dataframes in this list into one dataframe along the vertical axis
+    kt = pd.concat(list, axis=0)
 
+    #convert to xarray dataset and add metadata attributes so that the data file describes itself
+    kt_xr = xr.Dataset.from_dataframe(kt)
+    kt_xr.attrs['experiment'] = experiment
+    kt_xr.attrs['sea_serial'] = sea_serial
+    kt_xr.attrs['sky_serial'] = sky_serial
+    #save as netcdf in output_path
+    kt_xr.to_netcdf(output_path+f'/{experiment}_KT15_{sea_serial}_{sky_serial}.cdf')
 
-def KT15_labcalibration(l1data_path):
+#def KT15_labcalibration(l1data_path):
     # --------------------------------------------------------------------------------------------
-    #
-    #
+    # This function takes KT15 data from blackbody calibrations done in the lab, and calculates
+    # a linear fit to the measured values given the blackbody reference temperature.
     # --------------------------------------------------------------------------------------------
 
 
