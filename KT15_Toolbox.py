@@ -30,14 +30,24 @@ def KT15_reader(filepath):
     # Outputs: df      - pandas dataframe containing cleaned timeseries
     # --------------------------------------------------------------------------------------------
 
-    df = pd.read_csv(filepath,                                                                                     #filename to read in
-                     delimiter='\s+', skiprows=1, header=None,                                                     #treat whitespace as the delimeter, ignore the header line
-                     usecols=[0,1,2,3,4,5], names=['Date','Time','SeaRef','SeaTemp','SkyRef','SkyTemp'],           #use the first 6 columns, and name them as specified
-                     parse_dates={'DateTime':[0,1]}, index_col=0,                                                  #parse the first two columns as a single DateTime, and make it the index column
-                     na_values=['AMB','TIMEOUT','ERROR'],                                                          #list of other things the parser might encounter in these files, that should be treated like NaNs
-                     dtype={'SeaRef':np.float64, 'SeaTemp':np.float64, 'SkyRef':np.float64, 'SkyTemp':np.float64}, #explicitly specify that data columns must be 64-bit floating point numbers
-                     error_bad_lines=False, warn_bad_lines=True)                                                   #if there is a bad line in the data file, drop it from the file and show a warning, but continue parsing
-    df.dropna(axis='index',how='any',inplace=True)                                                                 #drop any rows that have a NaN value in them
+    # define a function to handle the importing of bad lines
+    #if the data is not a valid float, return a NaN
+    def valid_float(y):
+        try:
+            return float(y)
+        except ValueError:
+            return np.nan
+        except TypeError:
+            return np.nan
+
+    df = pd.read_csv(filepath, engine='python',                                                                              #filename to read in, python engine is slower but better error handling (default is C)
+                     delimiter='\s+', skiprows=1, header=None,                                                               #treat whitespace as the delimeter, ignore the header line
+                     usecols=[0,1,2,3,4,5], names=['Date','Time','SeaRef','SeaTemp','SkyRef','SkyTemp'],                     #use the first 6 columns, and name them as specified
+                     parse_dates={'DateTime':[0,1]}, index_col=0,                                                            #parse the first two columns as a single DateTime, and make it the index column
+                     na_values=['AMB','TIMEOUT','ERROR','BAD','C'],                                                          #list of other things the parser might encounter in these files, that should be treated like NaNs
+                     converters={'SeaRef':valid_float, 'SeaTemp':valid_float, 'SkyRef':valid_float, 'SkyTemp':valid_float},  #explicitly specify that data columns must be floats, and if not a nan is put in (should make the above line obsolete)
+                     error_bad_lines=False, warn_bad_lines=True)                                                             #if there is a bad line in the data file, drop it from the file and show a warning, but continue parsing
+    df.dropna(axis='index',how='any',inplace=True)                                                                           #drop any rows that have a NaN value in them
     return df
 
 ######################################################################################################
@@ -114,7 +124,7 @@ def KT15_labcalibration(data_folder, output_path, caltemps):
     yday = int(parsed_filename[-2])
     year = int(parsed_filename[-8])
     date = dt.datetime(year, 1, 1) + dt.timedelta(yday - 1)
-    datestr = date.strftime('%Y-%M-%d')
+    datestr = date.strftime('%Y-%m-%d')
 
     #initialize pandas dataframe with calibration temperatures as the index, and mean & std as the columns
     seaCal = pd.DataFrame(data=None,index=caltemps,columns=['Mean','Std'])
@@ -174,29 +184,54 @@ def KT15_labcalibration(data_folder, output_path, caltemps):
 
 ######################################################################################################
 
-def KT15_calibrate_skycorrect82(l1data_path, sea_slope, sea_yint, sky_slope, sky_yint):
+def KT15_calibrate_skycorrect82(l1data_path, output_path, cal_path):
     # --------------------------------------------------------------------------------------------
     # This function takes data from a pair of up- and down-looking KT15.82 8um-14um infrared
-    # radiometers, applies a linear calibration based on mean coefficients provided from blackbody
-    # calibrations in the lab, and calculates a final value for the true SST corrected for
+    # radiometers, applies a linear calibration based on mean coefficients taken from blackbody
+    # calibrations in the lab, and calculates a final value for the 'true' SST corrected for
     # reflections from the sky, following SOURCE.
     #
     # Inputs:
     #    l1data_path - path to Level 1 Data Product generated by KT15_import function
-    #    sea_slope   - slope of blackbody calibration for down-looking instrument
-    #    sea_yint    - y-intercept of blackbody calibration for down-looking instrument
-    #    sky_slope   - slope of blackbody calibration for up-looking instrument
-    #    sky_yint    - y-intercept of blackbody calibration for up-looking instrument
+    #    output_path - path to save new product with final calibrated SST
+    #    cal_path    - path to folder containing all the blackbody calibrations (generated by
+    #                  KT15_labcalibration) that you'd like to apply (for both instruments)
     #
-    # Outputs:
+    # Outputs: The imported L1 netcdf is saved in the output_path with a new variable added:
     #    SST         - final radiometric Sea Surface Temperature for the skin layer
     # --------------------------------------------------------------------------------------------
 
-    # open
+    # open L1 data
+    kt = xr.open_dataset(l1data_path)
+
+    #extract all calibration files for each instrument from cal_path, and take the average values
+    sky_files = glob.glob(cal_path+f'/*{kt.sky_serial}*.cdf')
+    sky_slopes = []
+    sky_yints = []
+    for cal_file in sky_files:
+        cal = xr.open_dataset(cal_file)
+        sky_slopes.append(cal.slope)
+        sky_yints.append(cal.yint)
+    sky_slope = np.mean(sky_slopes)
+    sky_yint = np.mean(sky_yints)
+
+    sea_files = glob.glob(cal_path+f'/*{kt.sea_serial}*.cdf')
+    sea_slopes = []
+    sea_yints = []
+    for cal_file in sea_files:
+        cal = xr.open_dataset(cal_file)
+        sea_slopes.append(cal.slope)
+        sea_yints.append(cal.yint)
+    sea_slope = np.mean(sea_slopes)
+    sea_yint = np.mean(sea_yints)
 
     #apply blackbody calibration
-    SkyTemp_Cal = (kt.SkyTemp - sky_yint)/sky_slope
-    SeaTemp_Cal = (kt.SeaTemp - sea_yint)/sea_slope
+    kt['SkyTemp_Cal'] = (kt.SkyTemp - sky_yint)/sky_slope
+    kt['SeaTemp_Cal'] = (kt.SeaTemp - sea_yint)/sea_slope
+    kt.attrs['sea_slope'] = sea_slope
+    kt.attrs['sea_yint'] = sea_yint
+    kt.attrs['sky_slope'] = sky_slope
+    kt.attrs['sky_yint'] = sky_yint
 
     #apply sky correction - what is the source for these coefficients?
     K0u = -1.9151
@@ -223,3 +258,11 @@ def KT15_calibrate_skycorrect82(l1data_path, sea_slope, sea_yint, sky_slope, sky
     TotalRad = K0d + K1d*RadTempSEA + K2d*RadTempSEA**2 + K3d*RadTempSEA**3 + K4d*RadTempSEA**4 + K5d*RadTempSEA**5 + K6d*RadTempSEA**6 + K7d*RadTempSEA**7 + K8d*RadTempSEA**8
     SSTRad = TotalRad - ReflectedSkyRad
     kt['SST'] = y0 + A*(SSTRad)**power - 273.16
+
+    #plot the results and save the figure
+    kt.SST.plot()
+    plt.title(f'KT-15 Calibrated & Sky-Corrected Data: {kt.experiment}')
+    plt.savefig(output_path+f'/{kt.experiment}_KT15_CalibratedSST.png')
+
+    #save the final dataframe in the output path
+    kt.to_netcdf(output_path+f'/{kt.experiment}_KT15_CalibratedSST.cdf')
