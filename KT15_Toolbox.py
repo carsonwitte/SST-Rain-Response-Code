@@ -81,7 +81,7 @@ def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment)
         df = KT15_reader(filepath)
         list.append(df)
     #concatenate all the dataframes in this list into one dataframe along the vertical axis
-    kt = pd.concat(list, axis=0)
+    kt = pd.concat(list, axis=0, sort=True)
 
     #convert to xarray dataset and add metadata attributes so that the data file describes itself
     kt_xr = xr.Dataset.from_dataframe(kt)
@@ -163,7 +163,7 @@ def KT15_labcalibration(data_folder, output_path, caltemps):
     sky_xr.to_netcdf(output_path+f'/KT15_LabCalibration_{sky_serial}_{datestr}.cdf')
 
     #plot data and calibrated line for each one, with 2*Stdev error bars
-    fig,axx = plt.subplots(nrows=1,ncols=2,figsize=(10,4))
+    fig,axx = plt.subplots(nrows=1,ncols=2,figsize=(10,4),facecolor='w')
 
     axx[0].errorbar(x = caltemps, y = seaCal.Mean, yerr = 2*seaCal.Std, fmt = '.', markersize=6, markeredgewidth=2)
     axx[0].plot(caltemps, (seaCal.Mean-sea_yint)/sea_slope)
@@ -260,7 +260,8 @@ def KT15_calibrate_skycorrect82(l1data_path, output_path, cal_path):
     kt['SST'] = y0 + A*(SSTRad)**power - 273.16
 
     #plot the results and save the figure
-    kt.SST.plot()
+    fig,axx = plt.subplots(facecolor='w')
+    kt.SST.plot(ax=axx)
     plt.title(f'KT-15 Calibrated & Sky-Corrected Data: {kt.experiment}')
     plt.savefig(output_path+f'/{kt.experiment}_KT15_CalibratedSST.png')
 
