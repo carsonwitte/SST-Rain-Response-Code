@@ -21,14 +21,12 @@ import datetime as dt
 from matplotlib import pyplot as plt
 
 def KT15_reader(filepath):
-    # --------------------------------------------------------------------------------------------
-    # This function just reads in a single Level-0 text file that was acquired with the
-    # custom-written LabView file 'KT15 UP & DOWN.vi' (stored in 'Software' folder of this
-    # repository for reference), gets rid of any bad lines, and returns a pandas dataframe
-    #
-    # Inputs: filepath - string pointing to the data file
-    # Outputs: df      - pandas dataframe containing cleaned timeseries
-    # --------------------------------------------------------------------------------------------
+    '''
+    This function just reads in a single Level-0 text file that was acquired with the custom-written LabView file 'KT15 UP & DOWN.vi' (stored in 'Software' folder of this repository for reference), gets rid of any bad lines, and returns a pandas dataframe
+
+    Input: filepath - string pointing to the data file
+    Output: df      - pandas dataframe containing cleaned timeseries
+    '''
 
     # define a function to handle the importing of bad lines
     #if the data is not a valid float, return a NaN
@@ -53,24 +51,20 @@ def KT15_reader(filepath):
 ######################################################################################################
 
 def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment):
-    # --------------------------------------------------------------------------------------------
-    # This function parses an arbitrary number of raw KT15 data files, and saves a single
-    # complete L1 data product (.netcdf, with all relevant metadata)
-    #
-    # Inputs:
-    #     data_folder  - a complete filepath to the folder containing the raw data. Relative paths
-    #                    and paths to local files will work and may be necessary for speed, but a
-    #                    path to a universally accessible server location is best.
-    #     output_path  - a filepath to the desired output location of the L1 data product.
-    #     sea_serial   - the serial number of the down-looking KT15
-    #     sky_serial   - the serial number of the up-looking KT15
-    #     experiment   - the name of the experiment (e.g., Falkor19)
-    #
-    # Outputs: this function does not have any python outputs. Instead it saves the imported data
-    # as a netcdf in output_path. The metadata will include:
-    #     - the serial numbers of the instruments
-    #     - the name of the experiment
-    # --------------------------------------------------------------------------------------------
+    '''
+    This function parses an arbitrary number of raw KT15 data files, and saves a single complete L1 data product (.netcdf, with all relevant metadata).
+
+    Inputs:
+         data_folder  - a complete filepath to the folder containing the raw data.
+         output_path  - a filepath to the desired output location of the L1 data product.
+         sea_serial   - the serial number of the down-looking KT15
+         sky_serial   - the serial number of the up-looking KT15
+         experiment   - the name of the experiment (e.g., Falkor19)
+
+    Outputs: this function does not have any python outputs. Instead it saves the imported data as a netcdf in output_path. The metadata will include:
+         - the serial numbers of the instruments
+         - the name of the experiment
+    '''
 
     #create list of all text files in data_folder
     files = glob.glob(data_folder + '\*.txt')
@@ -94,24 +88,22 @@ def KT15_importraw(data_folder, output_path, sea_serial, sky_serial, experiment)
 ######################################################################################################
 
 def KT15_labcalibration(data_folder, output_path, caltemps):
-    # --------------------------------------------------------------------------------------------
-    # This function takes KT15 data from a blackbody calibration done in the lab, and calculates
-    # a linear fit to the measured values given the blackbody reference temperature. To apply
-    # the calibration calculated by this function, apply this formula:
-    #    calibrated_data = (raw_data - yint)/slope
-    #
-    # Inputs:
-    #    data_folder - path to the folder containing exactly one blackbody calibration
-    #    output_path - a filepath to the desired output location of the calibration data
-    #    caltemps    - list of temperatures used in the calibration (usually 10-40 by 5)
-    #
-    # This function also saves each instrument calibration as a netcdf in output_path.
-    # The metadata for each will include:
-    #     - the serial number of the instrument
-    #     - the date of the blackbody calibration
-    #     - the slope of the fitted linear calibration
-    #     - the y-intercept of the fitted linear calibration
-    # --------------------------------------------------------------------------------------------
+    '''
+    This function takes KT15 data from a blackbody calibration done in the lab, and calculates a linear fit to the measured values given the blackbody reference temperature. To apply the calibration calculated by this function, apply this formula:
+        calibrated_data = (raw_data - yint)/slope
+
+    Inputs:
+        data_folder - path to the folder containing exactly one blackbody calibration
+        output_path - a filepath to the desired output location of the calibration data
+        caltemps    - list of temperatures used in the calibration (usually 10-40 by 5)
+
+    This function also saves each instrument calibration as a netcdf in output_path.
+    The metadata for each will include:
+         - the serial number of the instrument
+         - the date of the blackbody calibration
+         - the slope of the fitted linear calibration
+         - the y-intercept of the fitted linear calibration
+    '''
 
     #read list of data files
     files = glob.glob(data_folder + '\*.txt')
@@ -185,21 +177,18 @@ def KT15_labcalibration(data_folder, output_path, caltemps):
 ######################################################################################################
 
 def KT15_calibrate_skycorrect82(l1data_path, output_path, cal_path):
-    # --------------------------------------------------------------------------------------------
-    # This function takes data from a pair of up- and down-looking KT15.82 8um-14um infrared
-    # radiometers, applies a linear calibration based on mean coefficients taken from blackbody
-    # calibrations in the lab, and calculates a final value for the 'true' SST corrected for
-    # reflections from the sky, following SOURCE.
-    #
-    # Inputs:
-    #    l1data_path - path to Level 1 Data Product generated by KT15_import function
-    #    output_path - path to save new product with final calibrated SST
-    #    cal_path    - path to folder containing all the blackbody calibrations (generated by
-    #                  KT15_labcalibration) that you'd like to apply (for both instruments)
-    #
-    # Outputs: The imported L1 netcdf is saved in the output_path with a new variable added:
-    #    SST         - final radiometric Sea Surface Temperature for the skin layer
-    # --------------------------------------------------------------------------------------------
+    '''
+    This function takes data from a pair of up- and down-looking KT15.82 8um-14um infrared radiometers, applies a linear calibration based on mean coefficients taken from blackbody calibrations in the lab, and calculates a final value for the 'true' SST corrected for reflections from the sky, following SOURCE.
+
+    Inputs:
+        l1data_path - path to Level 1 Data Product generated by KT15_import function
+        output_path - path to save new product with final calibrated SST
+        cal_path    - path to folder containing all the blackbody calibrations (generated by
+                      KT15_labcalibration) that you'd like to apply (for both instruments)
+
+    Outputs: The imported L1 netcdf is saved in the output_path with a new variable added:
+        SST         - final radiometric Sea Surface Temperature for the skin layer
+    '''
 
     # open L1 data
     kt = xr.open_dataset(l1data_path)
