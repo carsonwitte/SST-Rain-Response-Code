@@ -9,15 +9,16 @@ import numpy as np
 import datetime as dt
 from matplotlib import pyplot as plt
 
-def find_rain_events(dataset, min_duration, min_separation, threshold, front_pad, end_pad):
+def find_rain_events(dataset, min_duration, min_separation, threshold, noise_floor, front_pad, end_pad):
     '''
     This function splits an xarray dataset into individual datasets for each precipitation event found in the timeseries, based on the input parameters.
 
     Inputs:
         dataset        - xarray dataset containing a precipitation field labeled 'P'
-        min_duration   - minimum consecutive timesteps of rainfall required to be considered an event start
+        min_duration   - minimum consecutive timesteps of rainfall required to be considered an event
         min_separation - minimum consecutive timesteps of no rainfall required to be considered an event end
         threshold      - minimum peak rainfall rate - if the event doesn't get past threshold, it is thrown out
+        noise_floor    - maximum value to treat as a zero (prevents very long tails on events where precipitation was juuuust above zero)
         front_pad      - how many minutes prior to rain onset to include in the rain event
         end_pad        - how many minutes after rain end to include in the rain event
 
@@ -37,19 +38,16 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, front_pad
     rain_event_counter = 0
     timestep = 0
     while timestep < len(rain_rate):
-        #if the current rain rate isn't zero...AND...it's going to keep raining for 'min_duration':
-        if (rain_rate.isel(index=timestep).values != 0 and
-            np.min(rain_rate.isel(index=slice(timestep,timestep+min_duration)).values) > 0):
+        #if the current rain rate isn't zero:
+        if (rain_rate.isel(index=timestep).values > noise_floor):
             #then we've got ourselves the start of a rain event!
             rain_start = timestep
             raining = True
-            #we've already checked that the rain event lasts at least 'min_duration', so start searching for the end there
-            timestep = timestep + min_duration - 1
             #enter a new loop that finds the end index of this rain event
             while raining:
                 #if the current rain rate is zero...AND...it's going to be zero from now until 'min_separation' from now:
-                if (rain_rate.isel(index=timestep).values == 0 and
-                    np.mean(rain_rate.isel(index=slice(timestep,timestep+min_separation)).values) == 0):
+                if (rain_rate.isel(index=timestep).values <= noise_floor and
+                    np.mean(rain_rate.isel(index=slice(timestep,timestep+min_separation)).values) <= noise_floor):
                         #then we've located the end of the rain event
                         rain_end = timestep
                         raining = False
@@ -60,8 +58,8 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, front_pad
                             peak_rate = rainevent.P.max().values.item()
                         except ValueError:
                             peak_rate = 0
-                        #check if the peak of the rain event exceeds 'threshold'
-                        if peak_rate >= threshold:
+                        #check if the peak of the rain event exceeds 'threshold' and the rain event is long enough
+                        if (peak_rate >= threshold and (rain_end - rain_start) >= min_duration):
                             #if so, fill out metadata and add this to the master list of rain events
                             rain_event_counter = rain_event_counter + 1
                             rainevent.attrs['Rain Event #'] = rain_event_counter
