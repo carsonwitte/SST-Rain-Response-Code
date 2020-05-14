@@ -91,8 +91,103 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
 
     return rain_event_list
 
-#Max SST response
-#Time of max SST response
-#Cumulative rain
-#Length of rain event
-#Time of maximum rain rate
+###########################################################################################
+
+def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
+    '''
+    This function takes a list of rain events and a dataset of sst and slices out the sst for each rain event, calculating the max sst deviation over the rain event along the way.
+    It then plots the rain rate & sst for each event, plus a second subplot of heat fluxes and wind speeds.
+    The plot includes markers for rain onset (green), peak (blue), and end (red) times, as well as a purple cross at the max SST deviation and a black line with error bars, located at the start of the pre-onset averaging period and indicating the mean+std of SST prior to rain onset.
+
+    Inputs:
+        rain_event_list     - a list of xarray datasets, each of which contains one rain event
+        sst                 - an xarray dataarray of sst values that (hopefully) covers the time period of all the rain events
+        pre_onset_averaging - how many minutes before rain onset to use as the average SST from which to calculate SST deviation
+
+    Outputs:
+        sst_event_list      - a list of xarray datasets containing sst data for the same rain events as in rain_event_list. It contains:
+            data:
+                sst              - timeseries of sst during the event
+                δsst             - timeseries of sst deviation from pre-onset mean
+            metadata:
+                pre-onset mean   - mean of sst for 'pre_onset_averaging' minutes prior to rain onset
+                pre-onset std    - std of sst for 'pre_onset_averaging' minutes prior to rain onset
+                Max δsst         - maximum deviation of sst from pre-onset mean during rain event
+                Time of max δsst - time of maximum deviation
+                Rain Event #     - monotonic event counter, taken directly from the rain_event_list
+
+    Plots:
+        This function plots all of the events in a giant row for human review, with the rain rate & sst for each event in the upper panel, plus a lower panel of heat fluxes and wind speeds during the event.
+        The plots include markers for rain onset (green), peak (blue), and end (red) times, as well as a purple cross at the max SST deviation and a black line with error bars, located at the start of the pre-onset averaging period and indicating the mean+std of SST prior to rain onset.
+    '''
+
+    sst_event_list = []
+    #initialize figure to plot into based on how many rain events we have
+    figlength = 5*len(rain_event_list)
+    fig, axx = plt.subplots(nrows=2, ncols=len(rain_event_list),facecolor='w',figsize=(figlength,6))
+
+    #cycle through each rain event
+    for event_num in np.arange(0,len(rain_event_list)):
+        #extract start and end times
+        start = pd.to_datetime(rain_event_list[event_num].attrs['Rain Onset'])
+        end = pd.to_datetime(rain_event_list[event_num].attrs['Rain End'])
+        first = rain_event_list[event_num].index[0]
+        last = rain_event_list[event_num].index[-1]
+
+        #slice out sst from this time and make new dataset
+        sst_event = xr.Dataset()
+        sst_event['sst'] = sst.sel(index=slice(first,last))
+
+        #calculate mean sst of previous 'pre_onset_averaging' minutes
+        pre_onset = start - dt.timedelta(minutes = pre_onset_averaging)
+        sst_event.attrs['pre-onset mean'] = sst_event.sst.sel(index=slice(pre_onset,start)).mean().item()
+        sst_event.attrs['pre-onset std'] = sst_event.sst.sel(index=slice(pre_onset,start)).std().item()
+
+        #calculate max sst deviation from pre-onset mean
+        sst_event['δsst'] = sst_event.sst - sst_event.attrs['pre-onset mean']
+        try:
+            #(if there is no data in this slice of sst, these lines will throw an error. But I want it to just pass a dataset full of nans instead.)
+            sst_event.attrs['Max δsst'] = sst_event.δsst.min().values #assumes that a rain event leads to a reduction in SST
+            sst_event.attrs['Time of max δsst'] = sst_event.δsst.where(sst_event.δsst==sst_event.attrs['Max δsst'], drop=True).index.values[0]
+        except IndexError:
+            sst_event.attrs['Max δsst'] = np.NaN
+            sst_event.attrs['Time of max δsst'] = np.NaN
+
+        #add in rain event number to event metadata, and add event to list
+        sst_event.attrs['Rain Event #'] = rain_event_list[event_num].attrs['Rain Event #']
+        sst_event_list.append(sst_event)
+
+        #----TOP PLOT: Precip & SST-------
+        #plot precipitation rate
+        rain_event_list[event_num].P.plot.line('-o',ax=axx[0,event_num],markersize=3,fillstyle=None)
+        axx[0,event_num].set_ylabel('Rain Rate [mm/hr]',color='C0')
+        #plot rainfall start and end times
+        axx[0,event_num].plot(start,rain_event_list[event_num].P.sel(index=start),'.g',markersize=12,fillstyle=None)
+        axx[0,event_num].plot(end,rain_event_list[event_num].P.sel(index=end),'.r',markersize=12,fillstyle=None)
+        #plot rainfall peak
+        axx[0,event_num].plot(rain_event_list[event_num].attrs['Peak Time'],rain_event_list[event_num].attrs['Peak Rate'],'.b',markersize=12,fillstyle=None)
+
+        #plot SST
+        ax2 = axx[0,event_num].twinx()
+        sst_event.sst.plot.line('C1',ax=ax2,fillstyle=None)
+        ax2.set_ylabel('SST [$^\circ$C]',color='C1')
+        #plot max δSST and pre-onset mean + std
+        try:
+            ax2.plot(sst_event.attrs['Time of max δsst'],sst_event.sst.sel(index=sst_event.attrs['Time of max δsst']),'x',color='darkmagenta',markersize=12)
+            ax2.errorbar(pre_onset,sst_event.attrs['pre-onset mean'],yerr=sst_event.attrs['pre-onset std'],fmt='+k',ecolor='k',capsize=10)
+        except KeyError:
+            None
+        #title
+        axx[0,event_num].set_title(f'Rain Event # {event_num+1}')
+
+        #-----BOTTOM PLOT: Winds & Heat Fluxes----
+        rain_event_list[event_num].lhf.plot.line('-o',color='purple',ax=axx[1,event_num],markersize=3,fillstyle=None)
+        rain_event_list[event_num].shf.plot.line('-o',color='firebrick',ax=axx[1,event_num],markersize=3,fillstyle=None)
+        axx[1,event_num].set_ylabel('Latent Heat Flux [W/m^2]', color='purple')
+        ax1 = axx[1,event_num].twinx()
+        rain_event_list[event_num].U10.plot.line('-o',color='slategray',ax=ax1,markersize=3,fillstyle=None)
+        ax1.set_ylabel('Wind Speed [m/s]',color='slategray')
+
+    plt.tight_layout()
+
+    return sst_event_list
