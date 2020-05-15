@@ -41,7 +41,7 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
         #if the current rain rate isn't zero:
         if (rain_rate.isel(index=timestep).values > noise_floor):
             #then we've got ourselves the start of a rain event!
-            rain_start = timestep
+            rain_start = timestep-1 #preceding zero value is the start, for consistency with Deb's approach
             raining = True
             #enter a new loop that finds the end index of this rain event
             while raining:
@@ -55,7 +55,7 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
                         rainevent = dataset.isel(index=slice(rain_start-front_pad,rain_end+end_pad))
                         #calculate peak rainfall rate - if you encounter any issues, set the rate to zero
                         try:
-                            peak_rate = rainevent.P.max().values.item()
+                            peak_rate = dataset.isel(index=slice(rain_start,rain_end)).P.max().values.item()
                         except ValueError:
                             peak_rate = 0
                         #check if the peak of the rain event exceeds 'threshold' and the rain event is long enough
@@ -140,6 +140,7 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
 
         #calculate mean sst of previous 'pre_onset_averaging' minutes
         pre_onset = start - dt.timedelta(minutes = pre_onset_averaging)
+        sst_event.attrs['pre-onset time'] = pre_onset
         sst_event.attrs['pre-onset mean'] = sst_event.sst.sel(index=slice(pre_onset,start)).mean().item()
         sst_event.attrs['pre-onset std'] = sst_event.sst.sel(index=slice(pre_onset,start)).std().item()
 
@@ -151,7 +152,7 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
             sst_event.attrs['Time of max δsst'] = sst_event.δsst.where(sst_event.δsst==sst_event.attrs['Max δsst'], drop=True).index.values[0]
         except IndexError:
             sst_event.attrs['Max δsst'] = np.NaN
-            sst_event.attrs['Time of max δsst'] = np.NaN
+            sst_event.attrs['Time of max δsst'] = np.datetime64("NaT")
 
         #add in rain event number to event metadata, and add event to list
         sst_event.attrs['Rain Event #'] = rain_event_list[event_num].attrs['Rain Event #']
@@ -191,3 +192,65 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
     plt.tight_layout()
 
     return sst_event_list
+
+##################################################################################
+
+def plot_rain_events(rain_event_list, sst_event_list, rain_ylims, δsst_ylims, rhf_ylims, wind_ylims):
+    '''
+    This function is a plotter for once you have developed lists of rain events for both revelle data and sst data.
+    The key difference from the plots made by the other functions is that these are on standardized y-axes.
+    At the moment, it plots rain rate + δsst on the top plot, and rain heat flux + wind speed on the bottom plot.
+    It allows you to specify the universal y limits for each variable as an input (2-element list).
+    '''
+    #initialize figure to plot into based on how many rain events we have
+    figlength = 5*len(rain_event_list)
+    fig, axx = plt.subplots(nrows=2, ncols=len(rain_event_list),facecolor='w',figsize=(figlength,6))
+
+    for event_num in np.arange(0,len(rain_event_list)):
+
+        start = pd.to_datetime(rain_event_list[event_num].attrs['Rain Onset'])
+        end = pd.to_datetime(rain_event_list[event_num].attrs['Rain End'])
+
+        #----TOP PLOT: Precip & δSST-------
+        #plot precipitation rate
+        rain_event_list[event_num].P.plot.line('-o',ax=axx[0,event_num],markersize=3,fillstyle=None)
+        axx[0,event_num].set_ylabel('Rain Rate [mm/hr]',color='C0')
+        #plot rainfall start and end times
+        axx[0,event_num].plot(start,rain_event_list[event_num].P.sel(index=start),'.g',markersize=12,fillstyle=None)
+        axx[0,event_num].plot(end,rain_event_list[event_num].P.sel(index=end),'.r',markersize=12,fillstyle=None)
+        #plot rainfall peak
+        axx[0,event_num].plot(rain_event_list[event_num].attrs['Peak Time'],rain_event_list[event_num].attrs['Peak Rate'],'.b',markersize=12,fillstyle=None)
+        #set ylim
+        axx[0,event_num].set_ylim(rain_ylims)
+
+        #plot SST
+        ax2 = axx[0,event_num].twinx()
+        sst_event_list[event_num].δsst.plot.line('C1',ax=ax2,fillstyle=None)
+        ax2.set_ylabel('$\delta$SST [$^\circ$C]',color='C1')
+        #plot max δSST and pre-onset mean + std
+        try:
+            ax2.plot(sst_event_list[event_num].attrs['Time of max δsst'],sst_event_list[event_num].δsst.sel(index=sst_event_list[event_num].attrs['Time of max δsst']),'x',color='darkmagenta',markersize=12)
+            ax2.errorbar(sst_event_list[event_num].attrs['pre-onset time'],0,yerr=sst_event_list[event_num].attrs['pre-onset std'],fmt='+k',capsize=10)
+        except KeyError:
+            None
+        #set ylim
+        ax2.set_ylim(δsst_ylims)
+        #title
+        axx[0,event_num].set_title(f'Rain Event # {event_num+1}')
+
+        #-----BOTTOM PLOT: Winds & Sensible Heat Flux due to Rain----
+        rain_event_list[event_num].rhf.plot.line('-o',color='purple',ax=axx[1,event_num],markersize=3,fillstyle=None)
+        axx[1,event_num].set_ylabel('Sensible Heat Flux Due to Rain [W/m^2]', color='purple')
+        axx[1,event_num].set_ylim(rhf_ylims)
+        ax1 = axx[1,event_num].twinx()
+        rain_event_list[event_num].U10.plot.line('-o',color='slategray',ax=ax1,markersize=3,fillstyle=None)
+        ax1.set_ylabel('Wind Speed [m/s]',color='slategray')
+        ax1.set_ylim(wind_ylims)
+
+    plt.tight_layout()
+
+################################################################################
+
+def extract_event_characteristics(rain_event_list, sst_event_list):
+    '''
+    '''
