@@ -7,6 +7,7 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 import datetime as dt
+import scipy
 from matplotlib import pyplot as plt
 
 def find_rain_events(dataset, min_duration, min_separation, threshold, noise_floor, front_pad, end_pad):
@@ -253,4 +254,149 @@ def plot_rain_events(rain_event_list, sst_event_list, rain_ylims, δsst_ylims, r
 
 def extract_event_characteristics(rain_event_list, sst_event_list):
     '''
+    This function takes the lists of rain events and corresponding sst events and extracts the metadata fields for each event, returning a new xarray dataarray with event number as the coordinate.
+
+    Inputs:
+        rain_event_list     - a list of xarray datasets, each of which contains one rain event
+        sst_event_list      - a list of xarray datasets, each of which contains the sst data corresponding to the rain events in rain_event_list
+
+    Outputs:
+        rain_events_summary - an xarray dataset with event number as the shared coordinate, and the following variables:
+            δsst_max        - Maximum SST deviation from mean SST prior to rain onset (C)
+            t_δsst_max      - Time of Max SST deviation, in minutes after rain onset
+            rain_max        - Maximum rainfall rate (mm/hr)
+            t_rain_max      - Time of maximum rainfall rate, in minutes after rain onset
+            L_rain          - Length of rain event, in minutes
+            rain_total      - Total rainfall (mm)
     '''
+    #initialize empty lists
+    δsst_max = []
+    t_δsst_max = []
+    rain_max = []
+    t_rain_max = []
+    L_rain = []
+    rain_total = []
+
+    #loop through each event and extract characteristics from metadata
+    for event_num in np.arange(0,len(rain_event_list)):
+        #max δSST
+        try:
+            δsst_max.append(sst_event_list[event_num].attrs['Max δsst'].item())
+        except AttributeError:
+            δsst_max.append(np.nan)
+        if np.isnat(sst_event_list[event_num].attrs['Time of max δsst']) == False:
+            t_δsst_max.append((sst_event_list[event_num].attrs['Time of max δsst'] - rain_event_list[event_num].attrs['Rain Onset']).astype('timedelta64[m]').astype('float'))
+        else:
+            t_δsst_max.append(np.nan)
+        #max rain
+        rain_max.append(rain_event_list[event_num].attrs['Peak Rate'])
+        #time of max rain
+        t_rain_max.append((rain_event_list[event_num].attrs['Peak Time'] - rain_event_list[event_num].attrs['Rain Onset']).astype('timedelta64[m]').astype('float'))
+        #length of rain event
+        L_rain.append((rain_event_list[event_num].attrs['Rain End'] - rain_event_list[event_num].attrs['Rain Onset']).astype('timedelta64[m]').astype('float'))
+        #cumulative rain
+        rain_total.append(rain_event_list[event_num].Precip[-1].values - rain_event_list[event_num].Precip[0].values)
+
+    #create xarray dataarray of metadata for each event
+    rain_events_summary = xr.Dataset(data_vars = {'δsst_max':('event_num',δsst_max),
+                                                  't_δsst_max':('event_num',t_δsst_max),
+                                                  'rain_max':('event_num',rain_max),
+                                                  't_rain_max':('event_num',t_rain_max),
+                                                  'L_rain':('event_num',L_rain),
+                                                  'rain_total':('event_num',rain_total)
+                                                 },coords={'event_num':np.arange(1,len(sst_event_list)+1)})
+    rain_events_summary.attrs['experiment'] = rain_event_list[0].attrs['experiment']
+    rain_events_summary.δsst_max.attrs['long_name'] = 'Max δSST'
+    rain_events_summary.δsst_max.attrs['units'] = 'C'
+    rain_events_summary.t_δsst_max.attrs['long_name'] = 'Time of Max δSST'
+    rain_events_summary.t_δsst_max.attrs['units'] = 'minutes after rain onset'
+    rain_events_summary.rain_max.attrs['long_name'] = 'Max Rain Rate'
+    rain_events_summary.rain_max.attrs['units'] = 'mm/hr'
+    rain_events_summary.t_rain_max.attrs['long_name'] = 'Time of Max Rain Rate'
+    rain_events_summary.t_rain_max.attrs['units'] = 'minutes after rain onset'
+    rain_events_summary.L_rain.attrs['long_name'] = 'Length of Rain Event'
+    rain_events_summary.L_rain.attrs['units'] = 'minutes'
+    rain_events_summary.L_rain.attrs['long_name'] = 'Total Rainfall'
+    rain_events_summary.L_rain.attrs['units'] = 'mm'
+
+    return rain_events_summary
+
+###########################################################################################
+
+def plot_histograms(rain_events_summary, nbins):
+    '''
+    Simple function for plotting histograms of the 6 major variables contained in rain_events_summary.
+    '''
+
+    fig,axx = plt.subplots(nrows=2,ncols=3,facecolor='w',figsize=(8,5))
+
+    rain_events_summary.δsst_max.plot.hist(ax=axx[1,0],bins=nbins);
+    axx[1,0].set_title('Max δSST')
+    axx[1,0].set_xlabel('$^\circ$C')
+    rain_events_summary.t_δsst_max.plot.hist(ax=axx[1,1],bins=nbins);
+    axx[1,1].set_title('Time of Max δSST')
+    axx[1,1].set_xlabel('minutes after rain onset')
+    rain_events_summary.rain_max.plot.hist(ax=axx[0,0],bins=nbins);
+    axx[0,0].set_title('Max Rain Rate')
+    axx[0,0].set_xlabel('mm/hr')
+    rain_events_summary.t_rain_max.plot.hist(ax=axx[0,1],bins=nbins);
+    axx[0,1].set_title('Time of Max Rain Rate')
+    axx[0,1].set_xlabel('minutes after rain onset')
+    rain_events_summary.L_rain.plot.hist(ax=axx[0,2],bins=nbins);
+    axx[0,2].set_title('Length of Rain Event')
+    axx[0,2].set_xlabel('minutes')
+    rain_events_summary.rain_total.plot.hist(ax=axx[1,2],bins=nbins)
+    axx[1,2].set_title('Total Rainfall')
+    axx[1,2].set_xlabel('mm')
+
+    plt.tight_layout()
+
+##############################################################################################
+
+def plot_relationships(rain_events_summary):
+    '''
+    Simple function for plotting linear relationships between the 6 major variables in rain_event_summary
+    '''
+
+    idx = np.isfinite(rain_events_summary.δsst_max.values)
+
+    δsst_max = rain_events_summary.δsst_max[idx]
+    t_δsst_max = rain_events_summary.t_δsst_max[idx]
+    rain_max = rain_events_summary.rain_max[idx]
+    t_rain_max = rain_events_summary.t_rain_max[idx]
+    L_rain = rain_events_summary.L_rain[idx]
+    rain_total = rain_events_summary.rain_total[idx]
+
+    def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
+        #run linear regression and plot
+        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+        axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=0)
+        axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
+
+        #scatterplot and label
+        axis.scatter(x, y, s=5, zorder=1)
+        axis.set_xlabel(xlabel)
+        axis.set_ylabel(ylabel)
+
+
+    fig,axx = plt.subplots(nrows=3,ncols=5,facecolor='w',figsize=(14,8))
+    #row 1: Max δSST vs. other variables
+    scatterplot_with_linreg(axx[0,0], δsst_max, 'Max δSST', rain_total, 'Total Rainfall [mm]')
+    scatterplot_with_linreg(axx[0,1], δsst_max, 'Max δSST', L_rain, 'Length of Rain Event [minutes]')
+    scatterplot_with_linreg(axx[0,2], δsst_max, 'Max δSST', rain_max, 'Max Rain Rate [mm/hr]')
+    scatterplot_with_linreg(axx[0,3], δsst_max, 'Max δSST', t_rain_max, 'Minutes to Max Rain')
+    scatterplot_with_linreg(axx[0,4], δsst_max, 'Max δSST', t_δsst_max, 'Minutes to Max δSST')
+
+    scatterplot_with_linreg(axx[1,0], t_δsst_max, 'Minutes to Max δSST', rain_total, 'Total Rainfall [mm]')
+    scatterplot_with_linreg(axx[1,1], t_δsst_max, 'Minutes to Max δSST', L_rain, 'Length of Rain Event [minutes]')
+    scatterplot_with_linreg(axx[1,2], t_δsst_max, 'Minutes to Max δSST', rain_max, 'Max Rain Rate [mm/hr]')
+    scatterplot_with_linreg(axx[1,3], t_δsst_max, 'Minutes to Max δSST', t_rain_max, 'Minutes to Max Rain')
+    scatterplot_with_linreg(axx[1,4], t_δsst_max, 'Minutes to Max δSST', δsst_max, 'Max δSST')
+
+    scatterplot_with_linreg(axx[2,0], t_rain_max, 'Minutes to Max Rain', rain_total, 'Total Rainfall [mm]')
+    scatterplot_with_linreg(axx[2,1], t_rain_max, 'Minutes to Max Rain', L_rain, 'Length of Rain Event [minutes]')
+    scatterplot_with_linreg(axx[2,2], t_rain_max, 'Minutes to Max Rain', rain_max, 'Max Rain Rate [mm/hr]')
+    scatterplot_with_linreg(axx[2,3], t_rain_max, 'Minutes to Max Rain', t_δsst_max, 'Minutes to Max δSST')
+    scatterplot_with_linreg(axx[2,4], t_rain_max, 'Minutes to Max Rain', δsst_max, 'Max δSST')
+
+    plt.tight_layout()
