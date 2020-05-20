@@ -8,6 +8,7 @@ import xarray as xr
 import numpy as np
 import datetime as dt
 import scipy
+import copy
 from matplotlib import pyplot as plt
 
 def find_rain_events(dataset, min_duration, min_separation, threshold, noise_floor, front_pad, end_pad):
@@ -135,6 +136,7 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
         first = rain_event_list[event_num].index[0]
         last = rain_event_list[event_num].index[-1]
 
+        #-----CREATE SST DATASET------------
         #slice out sst from this time and make new dataset
         sst_event = xr.Dataset()
         sst_event['sst'] = sst.sel(index=slice(first,last))
@@ -400,3 +402,166 @@ def plot_relationships(rain_events_summary):
     scatterplot_with_linreg(axx[2,4], t_rain_max, 'Minutes to Max Rain', δsst_max, 'Max δSST')
 
     plt.tight_layout()
+
+##########################################################################################
+
+def calculate_deltas(rain_event_list, param_list, pre_onset_averaging):
+    '''
+    Function for calculating the deviation from pre-onset mean of any parameter contained in the rain events in rain_event_list
+    '''
+
+    #cycle through rain events
+    for event_num in np.arange(0,len(rain_event_list)):
+        #extract pre-onset averaging time
+        start = pd.to_datetime(rain_event_list[event_num].attrs['Rain Onset'])
+        pre_onset = start - dt.timedelta(minutes = pre_onset_averaging)
+        rain_event_list[event_num].attrs['pre-onset time'] = pre_onset
+
+        #cycle through list of parameters to calculate deltas for
+        for param in param_list:
+            try:
+                rain_event_list[event_num][param].attrs['pre-onset mean'] = rain_event_list[event_num][param].sel(index=slice(pre_onset,start)).mean().item()
+                rain_event_list[event_num][param].attrs['pre-onset std'] = rain_event_list[event_num][param].sel(index=slice(pre_onset,start)).std().item()
+                rain_event_list[event_num][f'δ{param}'] = rain_event_list[event_num][param] - rain_event_list[event_num][param].attrs['pre-onset mean']
+            except KeyError:
+                print(f'{param} is not a valid variable name in rain_event_list')
+                param_list.remove(param)
+
+    return rain_event_list
+
+##################################################################################################
+
+def extract_composite_event(rain_event_list, sst_event_list, param_list, start, stop, spacing):
+    '''
+    This function takes all of the rain events and creates a single composite event by normalizing the timescale.
+    Timescale normalization is calculated as (current time - rain onset time)[minutes]/(minutes to max δSST).
+    The function then plots the composite event for 4 variables (air temp, sst, bulk temp, bulk salinity).
+
+    Inputs:
+        rain_event_list  - list of xarray datasets for each rain event
+        sst_event_list   - list of xarray datasets containing sst information for each rain event
+        param_list       - list of data variable names for which there is a δ{param} to be found in rain_event_list (should be same as the param_list input to calculate_deltas)
+        start            - desired start time in normalized coordinates (-2 recommended)
+        stop             - desired end time in normalized coordinates (8-12 recommended)
+        spacing          - step size ("bin size") for normalized time coordinates
+
+    Outputs:
+        composite_event  - xarray dataset with two dimensions - event number, and normalized timescale
+
+    Also puts out a plot of the composite events in air temp, sst, bulk temp, and bulk salinity.
+    '''
+
+    #initialize array of resampling coordinates
+    resample_coords = np.linspace(start, stop, num=(stop-start)/spacing,endpoint=False)
+
+    #create new lists of datasets to do time-normalization on
+    sst_normed_list = copy.deepcopy(sst_event_list)
+    rain_normed_list = copy.deepcopy(rain_event_list)
+
+    #initialize master arrays (shaped by event # vs. normalized timescale)
+    #sst
+    normed_δsst = np.empty(shape=(len(rain_event_list),len(resample_coords)))
+    #rain_event variables
+    array_list = []
+    for param in param_list:
+        array_list.append(np.empty(shape=(len(rain_event_list),len(resample_coords))))
+
+    #cycle through rain events
+    for event_num in np.arange(0,len(rain_event_list)):
+        #find times of rain onset and max sst response
+        onset = rain_event_list[event_num].attrs['Rain Onset']
+        t_max_δsst = (sst_event_list[event_num].attrs['Time of max δsst'] - onset).astype('timedelta64[m]').astype('float64')
+
+        #normalized time = (current time - rain onset time)[minutes]/(minutes to max δSST)
+        rain_normtime = (rain_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst
+        sst_normtime  = ((sst_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst)
+
+        #replace index with normalized time variable in the new list
+        sst_normed_list[event_num]['index'] = sst_normtime
+        rain_normed_list[event_num]['index'] = rain_normtime
+
+        #interpolate data onto resampling coordinates
+        sst_interp = sst_normed_list[event_num].interp(index=resample_coords)
+        rain_interp = rain_normed_list[event_num].interp(index=resample_coords)
+
+        #insert data into row of master array
+        normed_δsst[event_num,:] = sst_interp.δsst.values
+        for idx in np.arange(0,len(param_list)):
+            param = param_list[idx]
+            array_list[idx][event_num,:] = rain_interp[f'δ{param}'].values
+
+    #create and fill new dataset containing normalized events
+    composite_event = xr.Dataset(coords={'index':resample_coords,
+                                         'event':np.arange(1,len(rain_event_list)+1)})
+    #sst
+    composite_event = composite_event.assign({'δsst':(['event','index'],normed_δsst)})
+    #rain event variables
+    for idx in np.arange(0,len(param_list)):
+        param = param_list[idx]
+        composite_event = composite_event.assign({f'δ{param}':(['event','index'],array_list[idx])})
+
+    #count the number of data points at each timestep to size plots
+    sizes = np.empty_like(resample_coords)
+    for idx in np.arange(0,len(resample_coords)):
+        #count how many non-nan entries there are at this timestep
+        sizes[idx] = composite_event.δsst.sel(index=resample_coords[idx]).count().values.item()
+
+    #takes means and stds across all events
+    means = composite_event.mean(dim='event',skipna=True)
+    stds = composite_event.std(dim='event',skipna=True)
+
+    #plot
+    fig,axx= plt.subplots(nrows=4,ncols=1,figsize=(8,12),facecolor='w')
+    ticks = np.arange(start,stop+1,1)
+    ticklabels = ticks.astype('str').tolist()
+    ticklabels[-start] = 'Onset'
+    ticklabels[-start + 1] = r'$ \delta SST_{max} $'
+    plt.suptitle('DYNAMO Rain Events', y=0.999999)
+
+    #Subplot 0: Air Temp
+    axx[0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+    axx[0].errorbar(x=resample_coords, y=means.δT02, yerr=stds.δT02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+    axx[0].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
+    axx[0].set_xlim([resample_coords[0],resample_coords[-1]])
+    axx[0].set_xticks(ticks)
+    axx[0].set_xticklabels(ticklabels)
+    axx[0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+    axx[0].set_ylabel('$\delta T_{air} (^\circ C)$')
+    axx[0].set_title('Air Temperature')
+
+    #Subplot 1: δSST
+    axx[1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+    axx[1].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+    axx[1].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+    axx[1].set_xlim([resample_coords[0],resample_coords[-1]])
+    axx[1].set_xticks(ticks)
+    axx[1].set_xticklabels(ticklabels)
+    axx[1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+    axx[1].set_ylabel('δSST ($^\circ C$)')
+    axx[1].set_title('SST')
+
+    #Subplot 2: δT_bulk (sea snake)
+    axx[2].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+    axx[2].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+    axx[2].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+    axx[2].set_xlim([resample_coords[0],resample_coords[-1]])
+    axx[2].set_xticks(ticks)
+    axx[2].set_xticklabels(ticklabels)
+    axx[2].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+    axx[2].set_ylabel('$\delta T_{bulk} (^\circ C)$')
+    axx[2].set_title('Bulk Sea Temperature')
+
+    #Subplot 3: Bulk Salinity
+    axx[3].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+    axx[3].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+    axx[3].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=200)
+    axx[3].set_xlim([resample_coords[0],resample_coords[-1]])
+    axx[3].set_xticks(ticks)
+    axx[3].set_xticklabels(ticklabels)
+    axx[3].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+    axx[3].set_ylabel('$\delta S_{bulk} (psu)$')
+    axx[3].set_title('Bulk Salinity')
+
+    plt.tight_layout()
+
+    return composite_event
