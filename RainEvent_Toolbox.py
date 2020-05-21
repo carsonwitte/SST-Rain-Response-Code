@@ -549,7 +549,7 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
     axx[2].set_xticklabels(ticklabels)
     axx[2].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
     axx[2].set_ylabel('$\delta T_{bulk} (^\circ C)$')
-    axx[2].set_title('Bulk Sea Temperature')
+    axx[2].set_title('Bulk Sea Temperature (Sea Snake)')
 
     #Subplot 3: Bulk Salinity
     axx[3].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
@@ -560,7 +560,7 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
     axx[3].set_xticklabels(ticklabels)
     axx[3].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
     axx[3].set_ylabel('$\delta S_{bulk} (psu)$')
-    axx[3].set_title('Bulk Salinity')
+    axx[3].set_title('Bulk Salinity (Ship TSG)')
 
     plt.tight_layout()
 
