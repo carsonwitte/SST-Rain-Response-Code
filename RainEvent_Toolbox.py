@@ -185,12 +185,12 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
         axx[0,event_num].set_title(f'Rain Event # {event_num+1}')
 
         #-----BOTTOM PLOT: Winds & Heat Fluxes----
-        rain_event_list[event_num].lhf.plot.line('-o',color='purple',ax=axx[1,event_num],markersize=3,fillstyle=None)
-        rain_event_list[event_num].shf.plot.line('-o',color='firebrick',ax=axx[1,event_num],markersize=3,fillstyle=None)
-        axx[1,event_num].set_ylabel('Latent Heat Flux [W/m^2]', color='purple')
-        ax1 = axx[1,event_num].twinx()
-        rain_event_list[event_num].U10.plot.line('-o',color='slategray',ax=ax1,markersize=3,fillstyle=None)
-        ax1.set_ylabel('Wind Speed [m/s]',color='slategray')
+        #rain_event_list[event_num].lhf.plot.line('-o',color='purple',ax=axx[1,event_num],markersize=3,fillstyle=None)
+        #rain_event_list[event_num].shf.plot.line('-o',color='firebrick',ax=axx[1,event_num],markersize=3,fillstyle=None)
+        #axx[1,event_num].set_ylabel('Latent Heat Flux [W/m^2]', color='purple')
+        #ax1 = axx[1,event_num].twinx()
+        #rain_event_list[event_num].U10.plot.line('-o',color='slategray',ax=ax1,markersize=3,fillstyle=None)
+        #ax1.set_ylabel('Wind Speed [m/s]',color='slategray')
 
     plt.tight_layout()
 
