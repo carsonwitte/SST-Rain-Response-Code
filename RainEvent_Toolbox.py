@@ -82,6 +82,7 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
     #plot all detected rain events for human review
     figlength = 5*len(rain_event_list)
     fig, axx = plt.subplots(nrows=1, ncols=len(rain_event_list),facecolor='w',figsize=(figlength,3))
+
     for event_num in np.arange(0,len(rain_event_list)):
         rain_event_list[event_num].P.plot.line('-o',ax=axx[event_num],markersize=3,fillstyle=None)
         axx[event_num].set_title(f'Rain Event # {event_num+1}')

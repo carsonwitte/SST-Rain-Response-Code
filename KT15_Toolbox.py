@@ -252,7 +252,7 @@ def KT15_calibrate_skycorrect82(l1data_path, output_path, cal_path):
     fig,axx = plt.subplots(facecolor='w')
     kt.SST.plot(ax=axx)
     plt.title(f'KT-15 Calibrated & Sky-Corrected Data: {kt.experiment}')
-    plt.savefig(output_path+f'/{kt.experiment}_KT15_CalibratedSST.png')
+    plt.savefig(output_path+f'/{kt.experiment}_KT15_CalibratedSST_v2.png')
 
     #save the final dataframe in the output path
-    kt.to_netcdf(output_path+f'/{kt.experiment}_KT15_CalibratedSST.cdf')
+    kt.to_netcdf(output_path+f'/{kt.experiment}_KT15_CalibratedSST_v2.cdf')
