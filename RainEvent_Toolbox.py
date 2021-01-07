@@ -520,6 +520,8 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
     ticklabels[-start + 1] = r'$ \delta SST_{max} $'
     plt.suptitle('DYNAMO Rain Events', y=0.999999, fontsize=14)
 
+    temp_ylims = [-1,0.2]
+
     #Subplot 0,0: Rain Rate
     axx[0,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
     axx[0,0].errorbar(x=resample_coords, y=means.δPrecip, yerr=stds.δPrecip, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
@@ -545,23 +547,28 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
     #Subplot 1,0: δSST
     axx[1,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
     axx[1,0].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-    axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+    h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+    h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes, facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
     axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
     axx[1,0].set_xticks(ticks)
     axx[1,0].set_xticklabels(ticklabels)
     axx[1,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
     axx[1,0].set_ylabel('δSST ($^\circ C$)')
-    axx[1,0].set_title('SST (KT-15)')
+    axx[1,0].set_ylim(temp_ylims)
+    axx[1,0].set_title('Skin SST')
+    axx[1,0].legend([h1,h2],['Observed by KT-15', 'Estimated from COARE'])
 
     #Subplot 1,1: δT_bulk (sea snake)
     axx[1,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
     axx[1,1].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
     axx[1,1].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+
     axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
     axx[1,1].set_xticks(ticks)
     axx[1,1].set_xticklabels(ticklabels)
     axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
     axx[1,1].set_ylabel('$\delta T_{bulk} (^\circ C)$')
+    axx[1,1].set_ylim(temp_ylims)
     axx[1,1].set_title('Bulk Sea Temperature (Sea Snake)')
 
     #Subplot 2,1: Bulk Salinity
