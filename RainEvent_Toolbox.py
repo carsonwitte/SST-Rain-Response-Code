@@ -356,6 +356,19 @@ def plot_histograms(rain_events_summary, nbins):
 
 ##############################################################################################
 
+def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
+    #run linear regression and plot
+    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+    axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=0)
+    axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
+
+    #scatterplot and label
+    axis.scatter(x, y, s=5, zorder=1)
+    axis.set_xlabel(xlabel)
+    axis.set_ylabel(ylabel)
+
+##############################################################################################
+
 def plot_relationships(rain_events_summary):
     '''
     Simple function for plotting linear relationships between the 6 major variables in rain_event_summary
@@ -369,18 +382,6 @@ def plot_relationships(rain_events_summary):
     t_rain_max = rain_events_summary.t_rain_max[idx]
     L_rain = rain_events_summary.L_rain[idx]
     rain_total = rain_events_summary.rain_total[idx]
-
-    def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
-        #run linear regression and plot
-        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-        axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=0)
-        axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
-
-        #scatterplot and label
-        axis.scatter(x, y, s=5, zorder=1)
-        axis.set_xlabel(xlabel)
-        axis.set_ylabel(ylabel)
-
 
     fig,axx = plt.subplots(nrows=3,ncols=5,facecolor='w',figsize=(14,8))
     #row 1: Max δSST vs. other variables
