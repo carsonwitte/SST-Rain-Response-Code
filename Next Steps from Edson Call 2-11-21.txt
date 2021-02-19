@@ -1,0 +1,3 @@
+- what does the plot look like if we only include rain events at night? (remove potential diurnal effect)
+- compare COARE's corrected SST to our KT-15 SST for all non-rain-contaminated times- how close are they?
+- Edson will send us the direct covariances
