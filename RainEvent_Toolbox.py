@@ -359,7 +359,7 @@ def plot_histograms(rain_events_summary, nbins):
 def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
     #run linear regression and plot
     slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-    axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=0)
+    axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=2)
     axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
 
     #scatterplot and label
