@@ -82,6 +82,7 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
     #plot all detected rain events for human review
     figlength = 5*len(rain_event_list)
     fig, axx = plt.subplots(nrows=1, ncols=len(rain_event_list),facecolor='w',figsize=(figlength,3))
+
     for event_num in np.arange(0,len(rain_event_list)):
         rain_event_list[event_num].P.plot.line('-o',ax=axx[event_num],markersize=3,fillstyle=None)
         axx[event_num].set_title(f'Rain Event # {event_num+1}')
@@ -116,6 +117,8 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
                 pre-onset std    - std of sst for 'pre_onset_averaging' minutes prior to rain onset
                 Max δsst         - maximum deviation of sst from pre-onset mean during rain event
                 Time of max δsst - time of maximum deviation
+                Time of sst recovery - time the sst returns to within a std of the pre-onset mean
+                Minutes to sst recovery - number of minutes between max δsst and sst recovery
                 Rain Event #     - monotonic event counter, taken directly from the rain_event_list
 
     Plots:
@@ -147,15 +150,26 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
         sst_event.attrs['pre-onset mean'] = sst_event.sst.sel(index=slice(pre_onset,start)).mean().item()
         sst_event.attrs['pre-onset std'] = sst_event.sst.sel(index=slice(pre_onset,start)).std().item()
 
-        #calculate max sst deviation from pre-onset mean
+        #calculate max sst deviation from pre-onset mean, time of deviation, and time of return to mean
         sst_event['δsst'] = sst_event.sst - sst_event.attrs['pre-onset mean']
         try:
             #(if there is no data in this slice of sst, these lines will throw an error. But I want it to just pass a dataset full of nans instead.)
-            sst_event.attrs['Max δsst'] = sst_event.δsst.min().values #assumes that a rain event leads to a reduction in SST
+            sst_event.attrs['Max δsst'] = sst_event.δsst.sel(index=slice(start,end)).min().values #assumes that a rain event leads to a reduction in SST
             sst_event.attrs['Time of max δsst'] = sst_event.δsst.where(sst_event.δsst==sst_event.attrs['Max δsst'], drop=True).index.values[0]
+            
         except IndexError:
             sst_event.attrs['Max δsst'] = np.NaN
             sst_event.attrs['Time of max δsst'] = np.datetime64("NaT")
+            sst_event.attrs['Time of sst recovery'] = np.datetime64("NaT")
+            sst_event.attrs['Minutes to sst recovery'] = np.NaN
+            
+        try: 
+            #find first time after the max sst deviation that it returns to within 'pre-onset std' of zero, use 5min rolling mean to avoid catching a single outlier too early
+            sst_event.attrs['Time of sst recovery'] = sst_event.δsst.rolling(index=5,center=True).mean().where(sst_event.δsst.sel(index=slice(sst_event.attrs['Time of max δsst'],sst_event.index[-1])) > -sst_event.attrs['pre-onset std'], drop=True).index.values[0]
+            sst_event.attrs['Minutes to sst recovery'] = (sst_event.attrs['Time of sst recovery'] - sst_event.attrs['Time of max δsst']).astype('timedelta64[m]').astype('float')
+        except IndexError:
+            sst_event.attrs['Time of sst recovery'] = np.datetime64("NaT")
+            sst_event.attrs['Minutes to sst recovery'] = np.NaN
 
         #add in rain event number to event metadata, and add event to list
         sst_event.attrs['Rain Event #'] = rain_event_list[event_num].attrs['Rain Event #']
@@ -181,6 +195,12 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
             ax2.errorbar(pre_onset,sst_event.attrs['pre-onset mean'],yerr=sst_event.attrs['pre-onset std'],fmt='+k',ecolor='k',capsize=10)
         except KeyError:
             None
+            
+        try:
+            ax2.plot(sst_event.attrs['Time of sst recovery'],sst_event.sst.sel(index=sst_event.attrs['Time of sst recovery']),'^',color='purple',markersize=12)
+        except KeyError:
+            None
+            
         #title
         axx[0,event_num].set_title(f'Rain Event # {event_num+1}')
 
@@ -234,6 +254,7 @@ def plot_rain_events(rain_event_list, sst_event_list, rain_ylims, δsst_ylims, r
         try:
             ax2.plot(sst_event_list[event_num].attrs['Time of max δsst'],sst_event_list[event_num].δsst.sel(index=sst_event_list[event_num].attrs['Time of max δsst']),'x',color='darkmagenta',markersize=12)
             ax2.errorbar(sst_event_list[event_num].attrs['pre-onset time'],0,yerr=sst_event_list[event_num].attrs['pre-onset std'],fmt='+k',capsize=10)
+            ax2.plot(sst_event_list[event_num].attrs['Time of sst recovery'],sst_event_list[event_num].δsst.sel(index=sst_event_list[event_num].attrs['Time of sst recovery']),'^',color='purple',markersize=12)
         except KeyError:
             None
         #set ylim
@@ -355,6 +376,19 @@ def plot_histograms(rain_events_summary, nbins):
 
 ##############################################################################################
 
+def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
+    #run linear regression and plot
+    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+    axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=2)
+    axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
+
+    #scatterplot and label
+    axis.scatter(x, y, s=5, zorder=1)
+    axis.set_xlabel(xlabel)
+    axis.set_ylabel(ylabel)
+
+##############################################################################################
+
 def plot_relationships(rain_events_summary):
     '''
     Simple function for plotting linear relationships between the 6 major variables in rain_event_summary
@@ -368,18 +402,6 @@ def plot_relationships(rain_events_summary):
     t_rain_max = rain_events_summary.t_rain_max[idx]
     L_rain = rain_events_summary.L_rain[idx]
     rain_total = rain_events_summary.rain_total[idx]
-
-    def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
-        #run linear regression and plot
-        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-        axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=0)
-        axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
-
-        #scatterplot and label
-        axis.scatter(x, y, s=5, zorder=1)
-        axis.set_xlabel(xlabel)
-        axis.set_ylabel(ylabel)
-
 
     fig,axx = plt.subplots(nrows=3,ncols=5,facecolor='w',figsize=(14,8))
     #row 1: Max δSST vs. other variables
@@ -431,7 +453,7 @@ def calculate_deltas(rain_event_list, param_list, pre_onset_averaging):
 
 ##################################################################################################
 
-def extract_composite_event(rain_event_list, sst_event_list, param_list, start, stop, spacing):
+def extract_composite_event(rain_event_list, sst_event_list, param_list, start, stop, spacing, plotflag, title):
     '''
     This function takes all of the rain events and creates a single composite event by normalizing the timescale.
     Timescale normalization is calculated as (current time - rain onset time)[minutes]/(minutes to max δSST).
@@ -502,66 +524,169 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
 
     #count the number of data points at each timestep to size plots
     sizes = np.empty_like(resample_coords)
+    sizes_DC = np.empty_like(resample_coords)
     for idx in np.arange(0,len(resample_coords)):
         #count how many non-nan entries there are at this timestep
         sizes[idx] = composite_event.δsst.sel(index=resample_coords[idx]).count().values.item()
-
+        sizes_DC[idx] = composite_event.δHsC.sel(index=resample_coords[idx]).count().values.item()
+        
     #takes means and stds across all events
     means = composite_event.mean(dim='event',skipna=True)
     stds = composite_event.std(dim='event',skipna=True)
+    
+    means_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+    stds_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
 
-    #plot
-    fig,axx= plt.subplots(nrows=4,ncols=1,figsize=(8,12),facecolor='w')
-    ticks = np.arange(start,stop+1,1)
-    ticklabels = ticks.astype('str').tolist()
-    ticklabels[-start] = 'Onset'
-    ticklabels[-start + 1] = r'$ \delta SST_{max} $'
-    plt.suptitle('DYNAMO Rain Events', y=0.999999)
+    if plotflag == 1:
+        #plot
+        fig,axx= plt.subplots(nrows=4,ncols=2,figsize=(16,13),facecolor='w')
+        ticks = np.arange(start,stop+1,1)
+        ticklabels = ticks.astype('str').tolist()
+        ticklabels[-start] = 'Onset'
+        ticklabels[-start + 1] = r'$ \delta SST_{max} $'
+        plt.suptitle(title, y=0.999999, fontsize=14)
 
-    #Subplot 0: Air Temp
-    axx[0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
-    axx[0].errorbar(x=resample_coords, y=means.δT02, yerr=stds.δT02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-    axx[0].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
-    axx[0].set_xlim([resample_coords[0],resample_coords[-1]])
-    axx[0].set_xticks(ticks)
-    axx[0].set_xticklabels(ticklabels)
-    axx[0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-    axx[0].set_ylabel('$\delta T_{air} (^\circ C)$')
-    axx[0].set_title('Air Temperature')
+        temp_ylims = [-1,0.2]
 
-    #Subplot 1: δSST
-    axx[1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
-    axx[1].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-    axx[1].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
-    axx[1].set_xlim([resample_coords[0],resample_coords[-1]])
-    axx[1].set_xticks(ticks)
-    axx[1].set_xticklabels(ticklabels)
-    axx[1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-    axx[1].set_ylabel('δSST ($^\circ C$)')
-    axx[1].set_title('SST')
+        #----------LEFT SIDE----------------
+        #Subplot 0,0: Rain Rate
+        axx[0,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[0,0].errorbar(x=resample_coords, y=means.δPrecip, yerr=stds.δPrecip, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
+        axx[0,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,0].set_ylim([-12,31])
+        axx[0,0].set_xticks(ticks)
+        axx[0,0].set_xticklabels(ticklabels)
+        axx[0,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$')
+        axx[0,0].set_title('Rain Rate')
+        
+        #Subplot 1,0: δSST
+        axx[1,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[1,0].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes, facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
+        h3 = axx[1,0].scatter(x=resample_coords, y=means.δSSTrain, s=sizes, facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots COARE skin-corrected SST + rain effect
+        axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,0].set_xticks(ticks)
+        axx[1,0].set_xticklabels(ticklabels)
+        axx[1,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[1,0].set_ylabel('δSST ($^\circ C$)')
+        axx[1,0].set_ylim(temp_ylims)
+        axx[1,0].set_title('Skin SST')
+        axx[1,0].legend([h1,h2,h3],['Observed by KT-15', 'COARE (no rain)','COARE (with rain)'])
 
-    #Subplot 2: δT_bulk (sea snake)
-    axx[2].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
-    axx[2].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-    axx[2].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
-    axx[2].set_xlim([resample_coords[0],resample_coords[-1]])
-    axx[2].set_xticks(ticks)
-    axx[2].set_xticklabels(ticklabels)
-    axx[2].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-    axx[2].set_ylabel('$\delta T_{bulk} (^\circ C)$')
-    axx[2].set_title('Bulk Sea Temperature (Sea Snake)')
+        #Subplot 2,0: δT_bulk (sea snake)
+        axx[2,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[2,0].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h3 = axx[2,0].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+        h4 = axx[2,0].scatter(x=resample_coords, y=means.δTseaTSG, s=sizes, c='k',marker='1',zorder=100)
+        axx[2,0].legend([h3,h4],['Sea Snake', 'Ship TSG'])
 
-    #Subplot 3: Bulk Salinity
-    axx[3].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
-    axx[3].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-    axx[3].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=200)
-    axx[3].set_xlim([resample_coords[0],resample_coords[-1]])
-    axx[3].set_xticks(ticks)
-    axx[3].set_xticklabels(ticklabels)
-    axx[3].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-    axx[3].set_ylabel('$\delta S_{bulk} (psu)$')
-    axx[3].set_title('Bulk Salinity (Ship TSG)')
+        axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,0].set_xticks(ticks)
+        axx[2,0].set_xticklabels(ticklabels)
+        axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[2,0].set_ylabel('$\delta T_{bulk} (^\circ C)$')
+        axx[2,0].set_ylim(temp_ylims)
+        axx[2,0].set_title('Bulk Sea Temperature')
+        
+         #Subplot 3,0: Sensible Fluxes
+        axx[3,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δHsC, yerr=stds.δHsC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=300)
+        h3 = axx[3,0].scatter(x=resample_coords, y=means_DC.δHsC, s=sizes_DC, c='forestgreen',zorder=400)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δshf, yerr=stds.δshf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h4 = axx[3,0].scatter(x=resample_coords, y=means_DC.δshf, s=sizes_DC, c='purple',zorder=200)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δrhf, yerr=stds.δrhf, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h5 = axx[3,0].scatter(x=resample_coords, y=means_DC.δrhf, s=sizes_DC, c='darkblue',zorder=200)
+        axx[3,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[3,0].set_xticks(ticks)
+        axx[3,0].set_xticklabels(ticklabels)
+        axx[3,0].legend([h3,h4,h5],['DC','COARE','COARE Rain'])
+        axx[3,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$')
+        axx[3,0].set_title('Sensible Fluxes')
+        
+        
+        #--------------RIGHT SIDE---------------
+        
+        #Subplot 0,1: Air Temp
+        axx[0,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[0,1].errorbar(x=resample_coords, y=means.δT02, yerr=stds.δT02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[0,1].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
+        axx[0,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,1].set_ylim([-2.3,0.3])
+        axx[0,1].set_xticks(ticks)
+        axx[0,1].set_xticklabels(ticklabels)
+        axx[0,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[0,1].set_ylabel('$\delta T_{air} (^\circ C)$')
+        axx[0,1].set_title('Air Temperature')
+        
+        #Subplot 1,1: Wind Speed
+        axx[1,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[1,1].errorbar(x=resample_coords, y=means.δwspd, yerr=stds.δwspd, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[1,1].scatter(x=resample_coords, y=means.δwspd, s=sizes, c='darkslategray',zorder=200)
+        axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,1].set_xticks(ticks)
+        axx[1,1].set_xticklabels(ticklabels)
+        axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[1,1].set_ylabel('$\delta U (m/s)$')
+        axx[1,1].set_title('Wind Speed')
+        
+        #Subplot 2,1: δQ
+        axx[2,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[2,1].errorbar(x=resample_coords, y=means.δQ02, yerr=stds.δQ02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[2,1].scatter(x=resample_coords, y=means.δQ02, s=sizes, c='darkslateblue',zorder=200)
+        axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,1].set_xticks(ticks)
+        axx[2,1].set_xticklabels(ticklabels)
+        axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[2,1].set_ylabel('$\delta Q_{2m} (g/kg)$')
+        axx[2,1].set_title('Specific Humidity')
 
-    plt.tight_layout()
+        
+        #Subplot 3,1: Latent fluxes
+        axx[3,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[3,1].errorbar(x=resample_coords, y=means_DC.δHlC, yerr=stds_DC.δHlC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h1 = axx[3,1].scatter(x=resample_coords, y=means_DC.δHlC, s=sizes_DC, c='forestgreen',zorder=200)
+        axx[3,1].errorbar(x=resample_coords, y=means_DC.δlhf, yerr=stds.δlhf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h2 = axx[3,1].scatter(x=resample_coords, y=means_DC.δlhf, s=sizes_DC, c='purple',zorder=200)
+        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,0].set_ylim([-80,300])
+        axx[3,1].set_xticks(ticks)
+        axx[3,1].set_xticklabels(ticklabels)
+        axx[3,1].legend([h1,h2],['DC','COARE'])
+        axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        axx[3,1].set_ylabel('$\delta$ Flux $(W/m^2)$')
+        axx[3,1].set_title('Latent Fluxes')
+        
+        
+        #Subplot 2,1: Bulk Salinity
+        #axx[2,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[2,1].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #axx[2,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=200)
+        #axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,1].set_ylim([-0.18,0.28])
+        #axx[2,1].set_xticks(ticks)
+        #axx[2,1].set_xticklabels(ticklabels)
+        #axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[2,1].set_ylabel('$\delta S_{bulk} (psu)$')
+        #axx[2,1].set_title('Bulk Salinity (Ship TSG)')
+
+
+        #Subplot 2,0: Sensible Heat Flux Due to Rain
+        #axx[2,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[2,0].errorbar(x=resample_coords, y=means.δrhf, yerr=stds.δrhf, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #axx[2,0].scatter(x=resample_coords, y=means.δrhf, s=sizes, c='forestgreen',zorder=200)
+        #axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,0].set_ylim([-80,300])
+        #axx[2,0].set_xticks(ticks)
+        #axx[2,0].set_xticklabels(ticklabels)
+        #axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[2,0].set_ylabel('Rain Heat Flux $(W/m^2)$')
+        #axx[2,0].set_title('Sensible Heat Flux Due to Rain (COARE)')
+        
+
+        plt.tight_layout()
 
     return composite_event
