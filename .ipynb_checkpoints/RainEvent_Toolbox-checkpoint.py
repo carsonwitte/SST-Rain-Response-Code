@@ -79,7 +79,8 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
         else:
             timestep = timestep + 1
 
-    #plot all detected rain events for human review
+    #plot all detected rain events for human review (comment out for speed)
+    '''
     figlength = 5*len(rain_event_list)
     fig, axx = plt.subplots(nrows=1, ncols=len(rain_event_list),facecolor='w',figsize=(figlength,3))
 
@@ -91,6 +92,7 @@ def find_rain_events(dataset, min_duration, min_separation, threshold, noise_flo
         end = rain_event_list[event_num].attrs['Rain End']
         axx[event_num].plot(end,rain_event_list[event_num].P.sel(index=end),'.r',markersize=12,fillstyle=None)
     plt.tight_layout()
+    '''
 
     return rain_event_list
 
@@ -204,6 +206,12 @@ def sst_rain_response(rain_event_list, sst, pre_onset_averaging):
         #title
         axx[0,event_num].set_title(f'Rain Event # {event_num+1}')
 
+        #-----BOTTOM PLOT: MJO Phase----
+        rain_event_list[event_num].mjo_phase.plot.line('-',color='purple',ax=axx[1,event_num],markersize=3,fillstyle=None)
+        axx[1,event_num].set_ylabel('MJO Phase', color='purple')
+        axx[1,event_num].set_ylim([0,9])
+        axx[1,event_num].grid()
+        
         #-----BOTTOM PLOT: Winds & Heat Fluxes----
         #rain_event_list[event_num].lhf.plot.line('-o',color='purple',ax=axx[1,event_num],markersize=3,fillstyle=None)
         #rain_event_list[event_num].shf.plot.line('-o',color='firebrick',ax=axx[1,event_num],markersize=3,fillstyle=None)
@@ -378,8 +386,12 @@ def plot_histograms(rain_events_summary, nbins):
 
 def scatterplot_with_linreg(axis, x, xlabel, y, ylabel):
     #run linear regression and plot
-    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-    axis.plot(x, slope*x + intercept, 'C1', linewidth=1, zorder=2)
+    coef = np.polyfit(x,y,1)
+    slope, intercept = coef[0], coef[1]
+    r_value = np.corrcoef(x, y)[0, 1]
+    
+    poly1d_fn = np.poly1d(coef) # poly1d_fn is now a function which takes in x and returns an estimate for y
+    axis.plot(x, poly1d_fn(x), 'C1', linewidth=1, zorder=2)
     axis.annotate('$R^2$ = %0.2f' % r_value**2, xy=(0.05, 0.89), xycoords='axes fraction')
 
     #scatterplot and label
@@ -474,7 +486,7 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
     '''
 
     #initialize array of resampling coordinates
-    resample_coords = np.linspace(start, stop, num=(stop-start)/spacing,endpoint=False)
+    resample_coords = np.linspace(start, stop, num=int((stop-start)/spacing),endpoint=False)
 
     #create new lists of datasets to do time-normalization on
     sst_normed_list = copy.deepcopy(sst_event_list)
@@ -539,60 +551,82 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
 
     if plotflag == 1:
         #plot
-        fig,axx= plt.subplots(nrows=4,ncols=2,figsize=(16,13),facecolor='w')
+        fig,axx= plt.subplots(nrows=4,ncols=2,figsize=(16,12),facecolor='w')
         ticks = np.arange(start,stop+1,1)
         ticklabels = ticks.astype('str').tolist()
         ticklabels[-start] = 'Onset'
         ticklabels[-start + 1] = r'$ \delta SST_{max} $'
-        plt.suptitle(title, y=0.999999, fontsize=14)
+        plt.suptitle(title, y=0.98, fontsize=18)
 
         temp_ylims = [-1,0.2]
+        panel_x = 0.995
+        panel_y = 0.97
+        panel_font = 14
+        title_font = 16
 
         #----------LEFT SIDE----------------
         #Subplot 0,0: Rain Rate
-        axx[0,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[0,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[0,0].grid(alpha=0.2)
         axx[0,0].errorbar(x=resample_coords, y=means.δPrecip, yerr=stds.δPrecip, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-        axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
+        sc = axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
         axx[0,0].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[0,0].set_ylim([-12,31])
         axx[0,0].set_xticks(ticks)
-        axx[0,0].set_xticklabels(ticklabels)
-        axx[0,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$')
-        axx[0,0].set_title('Rain Rate')
+        axx[0,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$', fontsize=panel_font)
+        axx[0,0].set_title('Rain Rate',fontsize=title_font)
+        axx[0,0].legend(*sc.legend_elements("sizes", num=6),title='# of Events',loc='upper left', framealpha=0.9).set_zorder(1000)
+        axx[0,0].text(panel_x, panel_y, '(a)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,0].transAxes, zorder=300)
+        axx[0,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+
         
         #Subplot 1,0: δSST
-        axx[1,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[1,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[1,0].grid(alpha=0.2)
         axx[1,0].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
         h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
-        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes, facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
-        h3 = axx[1,0].scatter(x=resample_coords, y=means.δSSTrain, s=sizes, facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots COARE skin-corrected SST + rain effect
+        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes*0.8, marker='v', facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
+        h3 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_vF, s=sizes, marker='o', facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots Bellenger model (Original)
+        h4 = axx[1,0].scatter(x=resample_coords, y=means.δt_int, s=sizes+2, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model (Modified)
+
         axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[1,0].set_xticks(ticks)
-        axx[1,0].set_xticklabels(ticklabels)
-        axx[1,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[1,0].set_ylabel('δSST ($^\circ C$)')
+        axx[1,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,0].set_ylabel('δSST ($^\circ C$)', fontsize=panel_font)
         axx[1,0].set_ylim(temp_ylims)
-        axx[1,0].set_title('Skin SST')
-        axx[1,0].legend([h1,h2,h3],['Observed by KT-15', 'COARE (no rain)','COARE (with rain)'])
+        axx[1,0].set_title('Skin SST',fontsize=title_font)
+        axx[1,0].legend([h1,h2,h3,h4],['Observed by KT-15 (10μm)', 'COARE3.5 Model', 'Original Bellenger Model', 'Modified Bellenger Model'])
+        #axx[1,0].legend([h1,h2],['Observed by KT-15 (10μm)', 'COARE'])
+        axx[1,0].text(panel_x, panel_y, '(b)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,0].transAxes, zorder=300)
+        axx[1,0].yaxis.set_tick_params(labelsize=panel_font)
 
         #Subplot 2,0: δT_bulk (sea snake)
-        axx[2,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[2,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[2,0].grid(alpha=0.2)
         axx[2,0].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
         h3 = axx[2,0].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
         h4 = axx[2,0].scatter(x=resample_coords, y=means.δTseaTSG, s=sizes, c='k',marker='1',zorder=100)
-        axx[2,0].legend([h3,h4],['Sea Snake', 'Ship TSG'])
+        h5 = axx[2,0].scatter(x=resample_coords, y=means.δt_int_vF, s=sizes, marker='o', facecolors='none', edgecolors='darkmagenta' ,zorder=200) #plots Bellenger model SST (Original)
+        h6 = axx[2,0].scatter(x=resample_coords, y=means.δt_int, s=sizes+5, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model SST
+        axx[2,0].legend([h3,h4,h5,h6],['Sea Snake (5cm)', 'Ship TSG (5m)', 'Original Bellenger Model (0m)', 'Modified Bellenger Model (0m)'])
 
         axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[2,0].set_xticks(ticks)
-        axx[2,0].set_xticklabels(ticklabels)
-        axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[2,0].set_ylabel('$\delta T_{bulk} (^\circ C)$')
-        axx[2,0].set_ylim(temp_ylims)
-        axx[2,0].set_title('Bulk Sea Temperature')
+        axx[2,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,0].set_ylabel('$\delta T_{bulk} (^\circ C)$', fontsize=panel_font)
+        #axx[2,0].set_ylim(temp_ylims)
+        axx[2,0].set_title('Bulk Sea Temperature',fontsize=title_font)
+        axx[2,0].text(panel_x, panel_y, '(c)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,0].transAxes, zorder=300)
+        axx[2,0].yaxis.set_tick_params(labelsize=panel_font)
         
          #Subplot 3,0: Sensible Fluxes
-        axx[3,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[3,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[3,0].grid(alpha=0.2)
         axx[3,0].errorbar(x=resample_coords, y=means_DC.δHsC, yerr=stds.δHsC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=300)
         h3 = axx[3,0].scatter(x=resample_coords, y=means_DC.δHsC, s=sizes_DC, c='forestgreen',zorder=400)
         axx[3,0].errorbar(x=resample_coords, y=means_DC.δshf, yerr=stds.δshf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
@@ -601,77 +635,1188 @@ def extract_composite_event(rain_event_list, sst_event_list, param_list, start, 
         h5 = axx[3,0].scatter(x=resample_coords, y=means_DC.δrhf, s=sizes_DC, c='darkblue',zorder=200)
         axx[3,0].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[3,0].set_xticks(ticks)
-        axx[3,0].set_xticklabels(ticklabels)
-        axx[3,0].legend([h3,h4,h5],['DC','COARE','COARE Rain'])
-        axx[3,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$')
-        axx[3,0].set_title('Sensible Fluxes')
+        axx[3,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,0].legend([h3,h4,h5],['DC','COARE','Gosnell Rain'])
+        #axx[3,0].legend([h4],['COARE'],loc='upper left')
+        axx[3,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$', fontsize=panel_font)
+        axx[3,0].set_title('Sensible Fluxes',fontsize=title_font)
+        axx[3,0].text(panel_x, panel_y, '(d)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,0].transAxes, zorder=300)
+        axx[3,0].yaxis.set_tick_params(labelsize=panel_font)
         
         
         #--------------RIGHT SIDE---------------
         
         #Subplot 0,1: Air Temp
-        axx[0,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[0,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[0,1].grid(alpha=0.2)
         axx[0,1].errorbar(x=resample_coords, y=means.δT02, yerr=stds.δT02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
         axx[0,1].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
         axx[0,1].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[0,1].set_ylim([-2.3,0.3])
         axx[0,1].set_xticks(ticks)
-        axx[0,1].set_xticklabels(ticklabels)
-        axx[0,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[0,1].set_ylabel('$\delta T_{air} (^\circ C)$')
-        axx[0,1].set_title('Air Temperature')
+        axx[0,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,1].set_ylabel('$\delta T_{air} (^\circ C)$', fontsize=panel_font)
+        axx[0,1].set_title('Air Temperature',fontsize=title_font)
+        axx[0,1].text(panel_x, panel_y, '(e)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,1].transAxes, zorder=300)
         
         #Subplot 1,1: Wind Speed
-        axx[1,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[1,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[1,1].grid(alpha=0.2)
         axx[1,1].errorbar(x=resample_coords, y=means.δwspd, yerr=stds.δwspd, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
         axx[1,1].scatter(x=resample_coords, y=means.δwspd, s=sizes, c='darkslategray',zorder=200)
         axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[1,1].set_xticks(ticks)
-        axx[1,1].set_xticklabels(ticklabels)
-        axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[1,1].set_ylabel('$\delta U (m/s)$')
-        axx[1,1].set_title('Wind Speed')
+        axx[1,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,1].set_ylabel('$\delta U (m/s)$', fontsize=panel_font)
+        axx[1,1].set_title('Wind Speed',fontsize=title_font)
+        axx[1,1].text(panel_x, panel_y, '(f)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,1].transAxes, zorder=300)
+        axx[1,1].yaxis.set_tick_params(labelsize=panel_font)
         
         #Subplot 2,1: δQ
-        axx[2,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        axx[2,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[2,1].grid(alpha=0.2)
         axx[2,1].errorbar(x=resample_coords, y=means.δQ02, yerr=stds.δQ02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
         axx[2,1].scatter(x=resample_coords, y=means.δQ02, s=sizes, c='darkslateblue',zorder=200)
         axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
         axx[2,1].set_xticks(ticks)
-        axx[2,1].set_xticklabels(ticklabels)
-        axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[2,1].set_ylabel('$\delta Q_{2m} (g/kg)$')
-        axx[2,1].set_title('Specific Humidity')
+        axx[2,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,1].set_ylabel('$\delta Q_{2m} (g/kg)$', fontsize=panel_font)
+        axx[2,1].set_title('Specific Humidity',fontsize=title_font)
+        axx[2,1].text(panel_x, panel_y, '(g)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,1].transAxes, zorder=300)
+        axx[2,1].yaxis.set_tick_params(labelsize=panel_font)
 
         
         #Subplot 3,1: Latent fluxes
-        axx[3,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
-        axx[3,1].errorbar(x=resample_coords, y=means_DC.δHlC, yerr=stds_DC.δHlC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=100)
-        h1 = axx[3,1].scatter(x=resample_coords, y=means_DC.δHlC, s=sizes_DC, c='forestgreen',zorder=200)
-        axx[3,1].errorbar(x=resample_coords, y=means_DC.δlhf, yerr=stds.δlhf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
-        h2 = axx[3,1].scatter(x=resample_coords, y=means_DC.δlhf, s=sizes_DC, c='purple',zorder=200)
-        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[3,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[3,1].errorbar(x=resample_coords, y=means_DC.δHlC, yerr=stds_DC.δHlC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #h1 = axx[3,1].scatter(x=resample_coords, y=means_DC.δHlC, s=sizes_DC, c='forestgreen',zorder=200)
+        #axx[3,1].errorbar(x=resample_coords, y=means_DC.δlhf, yerr=stds.δlhf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #h2 = axx[3,1].scatter(x=resample_coords, y=means_DC.δlhf, s=sizes_DC, c='purple',zorder=200)
+        #axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
         #axx[2,0].set_ylim([-80,300])
-        axx[3,1].set_xticks(ticks)
-        axx[3,1].set_xticklabels(ticklabels)
-        axx[3,1].legend([h1,h2],['DC','COARE'])
-        axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        axx[3,1].set_ylabel('$\delta$ Flux $(W/m^2)$')
-        axx[3,1].set_title('Latent Fluxes')
+        #axx[3,1].set_xticks(ticks)
+        #axx[3,1].set_xticklabels(ticklabels)
+        #axx[3,1].legend([h1,h2],['DC','COARE'])
+        #axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[3,1].set_ylabel('$\delta$ Flux $(W/m^2)$')
+        #axx[3,1].set_title('Latent Fluxes')
         
+        
+        #Subplot 3,1: Bulk Salinity
+        axx[3,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[3,1].grid(alpha=0.2)
+        axx[3,1].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=10)
+        h1 = axx[3,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=20)
+        axx[3,1].errorbar(x=resample_coords, y=means.δs_int, yerr=stds.δs_int, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=10)
+        h2 = axx[3,1].scatter(x=resample_coords, y=means.δs_int, s=sizes, marker='*', facecolor='None', c='k')
+        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[3,1].set_ylim([-0.18,0.28])
+        axx[3,1].set_xticks(ticks)
+        axx[3,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,1].set_ylabel('$\delta S_{bulk} (psu)$', fontsize=panel_font)
+        axx[3,1].set_title('Salinity',fontsize=title_font)
+        axx[3,1].legend([h1,h2],['Ship TSG (5m)','Bellenger Model (0m)'])
+        axx[3,1].text(panel_x, panel_y, '(h)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,1].transAxes, zorder=300)
+        axx[3,1].yaxis.set_tick_params(labelsize=panel_font)
+
+
+        #Subplot 2,0: Sensible Heat Flux Due to Rain
+        #axx[2,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[2,0].errorbar(x=resample_coords, y=means.δrhf, yerr=stds.δrhf, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #axx[2,0].scatter(x=resample_coords, y=means.δrhf, s=sizes, c='forestgreen',zorder=200)
+        #axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,0].set_ylim([-80,300])
+        #axx[2,0].set_xticks(ticks)
+        #axx[2,0].set_xticklabels(ticklabels)
+        #axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[2,0].set_ylabel('Rain Heat Flux $(W/m^2)$')
+        #axx[2,0].set_title('Sensible Heat Flux Due to Rain (COARE)')
+        
+
+        plt.tight_layout()
+
+    return composite_event
+
+
+def extract_composite_event_SS(rain_event_list, sst_event_list, param_list, start, stop, spacing, plotflag, title):
+    '''
+    **Same function as extract_composite_event but plotting the sea snake-initialized model results rather than the TSG-initialized model results**
+    This function takes all of the rain events and creates a single composite event by normalizing the timescale.
+    Timescale normalization is calculated as (current time - rain onset time)[minutes]/(minutes to max δSST).
+    The function then plots the composite event for 4 variables (air temp, sst, bulk temp, bulk salinity).
+
+    Inputs:
+        rain_event_list  - list of xarray datasets for each rain event
+        sst_event_list   - list of xarray datasets containing sst information for each rain event
+        param_list       - list of data variable names for which there is a δ{param} to be found in rain_event_list (should be same as the param_list input to calculate_deltas)
+        start            - desired start time in normalized coordinates (-2 recommended)
+        stop             - desired end time in normalized coordinates (8-12 recommended)
+        spacing          - step size ("bin size") for normalized time coordinates
+
+    Outputs:
+        composite_event  - xarray dataset with two dimensions - event number, and normalized timescale
+
+    Also puts out a plot of the composite events in air temp, sst, bulk temp, and bulk salinity.
+    '''
+
+    #initialize array of resampling coordinates
+    resample_coords = np.linspace(start, stop, num=int((stop-start)/spacing),endpoint=False)
+
+    #create new lists of datasets to do time-normalization on
+    sst_normed_list = copy.deepcopy(sst_event_list)
+    rain_normed_list = copy.deepcopy(rain_event_list)
+
+    #initialize master arrays (shaped by event # vs. normalized timescale)
+    #sst
+    normed_δsst = np.empty(shape=(len(rain_event_list),len(resample_coords)))
+    #rain_event variables
+    array_list = []
+    for param in param_list:
+        array_list.append(np.empty(shape=(len(rain_event_list),len(resample_coords))))
+
+    #cycle through rain events
+    for event_num in np.arange(0,len(rain_event_list)):
+        #find times of rain onset and max sst response
+        onset = rain_event_list[event_num].attrs['Rain Onset']
+        t_max_δsst = (sst_event_list[event_num].attrs['Time of max δsst'] - onset).astype('timedelta64[m]').astype('float64')
+
+        #normalized time = (current time - rain onset time)[minutes]/(minutes to max δSST)
+        rain_normtime = (rain_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst
+        sst_normtime  = ((sst_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst)
+
+        #replace index with normalized time variable in the new list
+        sst_normed_list[event_num]['index'] = sst_normtime
+        rain_normed_list[event_num]['index'] = rain_normtime
+
+        #interpolate data onto resampling coordinates
+        sst_interp = sst_normed_list[event_num].interp(index=resample_coords)
+        rain_interp = rain_normed_list[event_num].interp(index=resample_coords)
+
+        #insert data into row of master array
+        normed_δsst[event_num,:] = sst_interp.δsst.values
+        for idx in np.arange(0,len(param_list)):
+            param = param_list[idx]
+            array_list[idx][event_num,:] = rain_interp[f'δ{param}'].values
+
+    #create and fill new dataset containing normalized events
+    composite_event = xr.Dataset(coords={'index':resample_coords,
+                                         'event':np.arange(1,len(rain_event_list)+1)})
+    #sst
+    composite_event = composite_event.assign({'δsst':(['event','index'],normed_δsst)})
+    #rain event variables
+    for idx in np.arange(0,len(param_list)):
+        param = param_list[idx]
+        composite_event = composite_event.assign({f'δ{param}':(['event','index'],array_list[idx])})
+
+    #count the number of data points at each timestep to size plots
+    sizes = np.empty_like(resample_coords)
+    sizes_DC = np.empty_like(resample_coords)
+    for idx in np.arange(0,len(resample_coords)):
+        #count how many non-nan entries there are at this timestep
+        sizes[idx] = composite_event.δsst.sel(index=resample_coords[idx]).count().values.item()
+        sizes_DC[idx] = composite_event.δHsC.sel(index=resample_coords[idx]).count().values.item()
+        
+    #takes means and stds across all events
+    means = composite_event.mean(dim='event',skipna=True)
+    stds = composite_event.std(dim='event',skipna=True)
+    
+    means_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+    stds_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+
+    if plotflag == 1:
+        #plot
+        fig,axx= plt.subplots(nrows=4,ncols=2,figsize=(16,12),facecolor='w')
+        ticks = np.arange(start,stop+1,1)
+        ticklabels = ticks.astype('str').tolist()
+        ticklabels[-start] = 'Onset'
+        ticklabels[-start + 1] = r'$ \delta SST_{max} $'
+        plt.suptitle(title, y=0.98, fontsize=18)
+
+        temp_ylims = [-1,0.2]
+        panel_x = 0.995
+        panel_y = 0.97
+        panel_font = 14
+        title_font = 16
+
+        #----------LEFT SIDE----------------
+        #Subplot 0,0: Rain Rate
+        axx[0,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[0,0].grid(alpha=0.2)
+        axx[0,0].errorbar(x=resample_coords, y=means.δPrecip, yerr=stds.δPrecip, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        sc = axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
+        axx[0,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,0].set_ylim([-12,31])
+        axx[0,0].set_xticks(ticks)
+        axx[0,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$', fontsize=panel_font)
+        axx[0,0].set_title('Rain Rate',fontsize=title_font)
+        axx[0,0].legend(*sc.legend_elements("sizes", num=6),title='# of Events',loc='upper left', framealpha=0.9).set_zorder(1000)
+        axx[0,0].text(panel_x, panel_y, '(a)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,0].transAxes, zorder=300)
+        axx[0,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+
+        
+        #Subplot 1,0: δSST
+        axx[1,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[1,0].grid(alpha=0.2)
+        axx[1,0].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes*0.8, marker='v', facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
+        h3 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_vF_SS, s=sizes, marker='o', facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots Bellenger model (Original)
+        h4 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_SS, s=sizes+2, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model (Modified)
+
+        axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,0].set_xticks(ticks)
+        axx[1,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,0].set_ylabel('δSST ($^\circ C$)', fontsize=panel_font)
+        axx[1,0].set_ylim(temp_ylims)
+        axx[1,0].set_title('Skin SST',fontsize=title_font)
+        axx[1,0].legend([h1,h2,h3,h4],['Observed by KT-15 (10μm)', 'COARE3.5 Model', 'Original Bellenger Model (SS)', 'Modified Bellenger Model (SS)'])
+        #axx[1,0].legend([h1,h2],['Observed by KT-15 (10μm)', 'COARE'])
+        axx[1,0].text(panel_x, panel_y, '(b)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,0].transAxes, zorder=300)
+        axx[1,0].yaxis.set_tick_params(labelsize=panel_font)
+
+        #Subplot 2,0: δT_bulk (sea snake)
+        axx[2,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[2,0].grid(alpha=0.2)
+        axx[2,0].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h3 = axx[2,0].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+        h4 = axx[2,0].scatter(x=resample_coords, y=means.δTseaTSG, s=sizes, c='k',marker='1',zorder=100)
+        h5 = axx[2,0].scatter(x=resample_coords, y=means.δt_int_vF_SS, s=sizes, marker='o', facecolors='none', edgecolors='darkmagenta' ,zorder=200) #plots Bellenger model SST (Original)
+        h6 = axx[2,0].scatter(x=resample_coords, y=means.δt_int_SS, s=sizes+5, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model SST
+        axx[2,0].legend([h3,h4,h5,h6],['Sea Snake (5cm)', 'Ship TSG (5m)', 'Original Bellenger Model (SS)', 'Modified Bellenger Model (SS)'])
+
+        axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,0].set_xticks(ticks)
+        axx[2,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,0].set_ylabel('$\delta T_{bulk} (^\circ C)$', fontsize=panel_font)
+        #axx[2,0].set_ylim(temp_ylims)
+        axx[2,0].set_title('Bulk Sea Temperature',fontsize=title_font)
+        axx[2,0].text(panel_x, panel_y, '(c)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,0].transAxes, zorder=300)
+        axx[2,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+         #Subplot 3,0: Sensible Fluxes
+        axx[3,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[3,0].grid(alpha=0.2)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δHsC, yerr=stds.δHsC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=300)
+        h3 = axx[3,0].scatter(x=resample_coords, y=means_DC.δHsC, s=sizes_DC, c='forestgreen',zorder=400)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δshf, yerr=stds.δshf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h4 = axx[3,0].scatter(x=resample_coords, y=means_DC.δshf, s=sizes_DC, c='purple',zorder=200)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δrhf, yerr=stds.δrhf, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h5 = axx[3,0].scatter(x=resample_coords, y=means_DC.δrhf, s=sizes_DC, c='darkblue',zorder=200)
+        axx[3,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[3,0].set_xticks(ticks)
+        axx[3,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,0].legend([h3,h4,h5],['DC','COARE','Gosnell Rain'])
+        #axx[3,0].legend([h4],['COARE'],loc='upper left')
+        axx[3,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$', fontsize=panel_font)
+        axx[3,0].set_title('Sensible Fluxes',fontsize=title_font)
+        axx[3,0].text(panel_x, panel_y, '(d)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,0].transAxes, zorder=300)
+        axx[3,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+        
+        #--------------RIGHT SIDE---------------
+        
+        #Subplot 0,1: Air Temp
+        axx[0,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[0,1].grid(alpha=0.2)
+        axx[0,1].errorbar(x=resample_coords, y=means.δT02, yerr=stds.δT02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[0,1].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
+        axx[0,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,1].set_ylim([-2.3,0.3])
+        axx[0,1].set_xticks(ticks)
+        axx[0,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,1].set_ylabel('$\delta T_{air} (^\circ C)$', fontsize=panel_font)
+        axx[0,1].set_title('Air Temperature',fontsize=title_font)
+        axx[0,1].text(panel_x, panel_y, '(e)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,1].transAxes, zorder=300)
+        
+        #Subplot 1,1: Wind Speed
+        axx[1,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[1,1].grid(alpha=0.2)
+        axx[1,1].errorbar(x=resample_coords, y=means.δwspd, yerr=stds.δwspd, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[1,1].scatter(x=resample_coords, y=means.δwspd, s=sizes, c='darkslategray',zorder=200)
+        axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,1].set_xticks(ticks)
+        axx[1,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,1].set_ylabel('$\delta U (m/s)$', fontsize=panel_font)
+        axx[1,1].set_title('Wind Speed',fontsize=title_font)
+        axx[1,1].text(panel_x, panel_y, '(f)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,1].transAxes, zorder=300)
+        axx[1,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 2,1: δQ
+        axx[2,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[2,1].grid(alpha=0.2)
+        axx[2,1].errorbar(x=resample_coords, y=means.δQ02, yerr=stds.δQ02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[2,1].scatter(x=resample_coords, y=means.δQ02, s=sizes, c='darkslateblue',zorder=200)
+        axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,1].set_xticks(ticks)
+        axx[2,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,1].set_ylabel('$\delta Q_{2m} (g/kg)$', fontsize=panel_font)
+        axx[2,1].set_title('Specific Humidity',fontsize=title_font)
+        axx[2,1].text(panel_x, panel_y, '(g)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,1].transAxes, zorder=300)
+        axx[2,1].yaxis.set_tick_params(labelsize=panel_font)
+
+        
+        #Subplot 3,1: Latent fluxes
+        #axx[3,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[3,1].errorbar(x=resample_coords, y=means_DC.δHlC, yerr=stds_DC.δHlC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #h1 = axx[3,1].scatter(x=resample_coords, y=means_DC.δHlC, s=sizes_DC, c='forestgreen',zorder=200)
+        #axx[3,1].errorbar(x=resample_coords, y=means_DC.δlhf, yerr=stds.δlhf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #h2 = axx[3,1].scatter(x=resample_coords, y=means_DC.δlhf, s=sizes_DC, c='purple',zorder=200)
+        #axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,0].set_ylim([-80,300])
+        #axx[3,1].set_xticks(ticks)
+        #axx[3,1].set_xticklabels(ticklabels)
+        #axx[3,1].legend([h1,h2],['DC','COARE'])
+        #axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[3,1].set_ylabel('$\delta$ Flux $(W/m^2)$')
+        #axx[3,1].set_title('Latent Fluxes')
+        
+        
+        #Subplot 3,1: Bulk Salinity
+        axx[3,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[3,1].grid(alpha=0.2)
+        axx[3,1].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=10)
+        h1 = axx[3,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=20)
+        axx[3,1].errorbar(x=resample_coords, y=means.δs_int, yerr=stds.δs_int, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=10)
+        h2 = axx[3,1].scatter(x=resample_coords, y=means.δs_int, s=sizes, marker='*', facecolor='None', c='k')
+        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[3,1].set_ylim([-0.18,0.28])
+        axx[3,1].set_xticks(ticks)
+        axx[3,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,1].set_ylabel('$\delta S_{bulk} (psu)$', fontsize=panel_font)
+        axx[3,1].set_title('Salinity',fontsize=title_font)
+        axx[3,1].legend([h1,h2],['Ship TSG (5m)','Bellenger Model (0m)'])
+        axx[3,1].text(panel_x, panel_y, '(h)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,1].transAxes, zorder=300)
+        axx[3,1].yaxis.set_tick_params(labelsize=panel_font)
+
+
+        #Subplot 2,0: Sensible Heat Flux Due to Rain
+        #axx[2,0].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[2,0].errorbar(x=resample_coords, y=means.δrhf, yerr=stds.δrhf, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #axx[2,0].scatter(x=resample_coords, y=means.δrhf, s=sizes, c='forestgreen',zorder=200)
+        #axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,0].set_ylim([-80,300])
+        #axx[2,0].set_xticks(ticks)
+        #axx[2,0].set_xticklabels(ticklabels)
+        #axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[2,0].set_ylabel('Rain Heat Flux $(W/m^2)$')
+        #axx[2,0].set_title('Sensible Heat Flux Due to Rain (COARE)')
+        
+
+        plt.tight_layout()
+
+    return composite_event
+
+
+
+
+##################################################################################################
+
+def extract_composite_event_revised(rain_event_list, sst_event_list, param_list, start, stop, spacing, plotflag, title):
+    '''
+    Revised extract_composite_event plotting the sea snake-initialized model results and changing some visualization.
+    This function takes all of the rain events and creates a single composite event by normalizing the timescale.
+    Timescale normalization is calculated as (current time - rain onset time)[minutes]/(minutes to max δSST).
+    The function then plots the composite event for 4 variables (air temp, sst, bulk temp, bulk salinity).
+
+    Inputs:
+        rain_event_list  - list of xarray datasets for each rain event
+        sst_event_list   - list of xarray datasets containing sst information for each rain event
+        param_list       - list of data variable names for which there is a δ{param} to be found in rain_event_list (should be same as the param_list input to calculate_deltas)
+        start            - desired start time in normalized coordinates (-2 recommended)
+        stop             - desired end time in normalized coordinates (8-12 recommended)
+        spacing          - step size ("bin size") for normalized time coordinates
+
+    Outputs:
+        composite_event  - xarray dataset with two dimensions - event number, and normalized timescale
+
+    Also puts out a plot of the composite events in air temp, sst, bulk temp, and bulk salinity.
+    '''
+
+    #initialize array of resampling coordinates
+    resample_coords = np.linspace(start, stop, num=int((stop-start)/spacing),endpoint=False)
+
+    #create new lists of datasets to do time-normalization on
+    sst_normed_list = copy.deepcopy(sst_event_list)
+    rain_normed_list = copy.deepcopy(rain_event_list)
+
+    #initialize master arrays (shaped by event # vs. normalized timescale)
+    #sst
+    normed_δsst = np.empty(shape=(len(rain_event_list),len(resample_coords)))
+    #rain_event variables
+    array_list = []
+    for param in param_list:
+        array_list.append(np.empty(shape=(len(rain_event_list),len(resample_coords))))
+
+    #cycle through rain events
+    for event_num in np.arange(0,len(rain_event_list)):
+        #find times of rain onset and max sst response
+        onset = rain_event_list[event_num].attrs['Rain Onset']
+        t_max_δsst = (sst_event_list[event_num].attrs['Time of max δsst'] - onset).astype('timedelta64[m]').astype('float64')
+
+        #normalized time = (current time - rain onset time)[minutes]/(minutes to max δSST)
+        rain_normtime = (rain_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst
+        sst_normtime  = ((sst_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst)
+
+        #replace index with normalized time variable in the new list
+        sst_normed_list[event_num]['index'] = sst_normtime
+        rain_normed_list[event_num]['index'] = rain_normtime
+
+        #interpolate data onto resampling coordinates
+        sst_interp = sst_normed_list[event_num].interp(index=resample_coords)
+        rain_interp = rain_normed_list[event_num].interp(index=resample_coords)
+
+        #insert data into row of master array
+        normed_δsst[event_num,:] = sst_interp.δsst.values
+        for idx in np.arange(0,len(param_list)):
+            param = param_list[idx]
+            array_list[idx][event_num,:] = rain_interp[f'δ{param}'].values
+
+    #create and fill new dataset containing normalized events
+    composite_event = xr.Dataset(coords={'index':resample_coords,
+                                         'event':np.arange(1,len(rain_event_list)+1)})
+    #sst
+    composite_event = composite_event.assign({'δsst':(['event','index'],normed_δsst)})
+    #rain event variables
+    for idx in np.arange(0,len(param_list)):
+        param = param_list[idx]
+        composite_event = composite_event.assign({f'δ{param}':(['event','index'],array_list[idx])})
+
+    #count the number of data points at each timestep to size plots
+    sizes = np.empty_like(resample_coords)
+    sizes_DC = np.empty_like(resample_coords)
+    for idx in np.arange(0,len(resample_coords)):
+        #count how many non-nan entries there are at this timestep
+        sizes[idx] = composite_event.δsst.sel(index=resample_coords[idx]).count().values.item()
+        sizes_DC[idx] = composite_event.δHsC.sel(index=resample_coords[idx]).count().values.item()
+    
+    #takes means and stds across all events
+    means = composite_event.mean(dim='event',skipna=True)
+    stds = composite_event.std(dim='event',skipna=True)
+    q10 = composite_event.quantile(0.1,dim='event')
+    q90 = composite_event.quantile(0.9,dim='event')
+    
+    means_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+    stds_DC = composite_event.where(~np.isnan(composite_event.δHsC)).std(dim='event',skipna=True)
+
+    if plotflag == 1:
+        #plot
+        fig,axx= plt.subplots(nrows=4,ncols=2,figsize=(16,12),facecolor='w')
+        ticks = np.arange(start,stop+1,1)
+        ticklabels = ticks.astype('str').tolist()
+        ticklabels[-start] = 'Onset'
+        ticklabels[-start + 1] = r'$ \delta SST_{max} $'
+        plt.suptitle(title, y=0.98, fontsize=18)
+
+        temp_ylims = [-0.9,0.15]
+        panel_x = 0.995
+        panel_y = 0.97
+        panel_font = 14
+        title_font = 16
+
+        #----------LEFT SIDE----------------
+        #Subplot 0,0: Rain Rate
+        axx[0,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[0,0].grid(alpha=0.8)
+        axx[0,0].fill_between(x=resample_coords, y1=q10.δPrecip, y2=q90.δPrecip, color='lightgrey',zorder=1)
+        axx[0,0].plot(resample_coords, means.δPrecip, color='C0',zorder=100)
+        sc = axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
+        
+        axx[0,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,0].set_ylim([-1,23])
+        axx[0,0].set_xticks(ticks)
+        axx[0,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$', fontsize=panel_font)
+        axx[0,0].set_title('Rain Rate',fontsize=title_font)
+        axx[0,0].legend(*sc.legend_elements("sizes", num=5),title='# of Events',loc='upper left', framealpha=0.9).set_zorder(1000)
+        axx[0,0].text(panel_x, panel_y, '(a)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,0].transAxes, zorder=300)
+        axx[0,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 1,0: δSST
+        axx[1,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[1,0].grid(alpha=0.8)
+        axx[1,0].fill_between(x=resample_coords, y1=q10.δsst, y2=q90.δsst, color='lightgrey',zorder=1)
+        axx[1,0].plot(resample_coords, means.δsst, color='red',zorder=100)
+        h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes*0.8, marker='v', facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
+        h3 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_vF_SS, s=sizes, marker='o', facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots Bellenger model (Original)
+        h4 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_SS, s=sizes+2, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model (Modified)
+
+        axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,0].set_xticks(ticks)
+        axx[1,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[1,0].set_ylabel('δSST ($^\circ C$)', fontsize=panel_font)
+        axx[1,0].set_ylim(temp_ylims)
+        axx[1,0].set_title('Skin SST',fontsize=title_font)
+        axx[1,0].legend([h1,h2,h3,h4],['Observed by KT-15 (10μm)', 'COARE3.5 Model', 'Original Bellenger Model', 'Modified Bellenger Model'])
+        axx[1,0].text(panel_x, panel_y, '(b)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,0].transAxes, zorder=300)
+        axx[1,0].yaxis.set_tick_params(labelsize=panel_font)
+
+        #Subplot 2,0: δT_bulk (sea snake)
+        axx[2,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[2,0].grid(alpha=0.8)
+        axx[2,0].fill_between(x=resample_coords, y1=q10.δTsea, y2=q90.δTsea, color='lightgrey', zorder=1)
+        axx[2,0].plot(resample_coords, means.δTsea, color='darkred',zorder=100)
+        h3 = axx[2,0].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+        h4 = axx[2,0].scatter(x=resample_coords, y=means.δTseaTSG, s=sizes, c='k',marker='^',zorder=100)
+        axx[2,0].plot(resample_coords, means.δTseaTSG, color='k',linestyle='--', zorder=100)
+        axx[2,0].legend([h3,h4],['Sea Snake (5cm)', 'Ship TSG (5m)'])
+
+        axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,0].set_xticks(ticks)
+        axx[2,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[2,0].set_ylabel('$\delta T_{bulk} (^\circ C)$', fontsize=panel_font)
+        axx[2,0].set_title('Bulk Sea Temperature',fontsize=title_font)
+        axx[2,0].text(panel_x, panel_y, '(c)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,0].transAxes, zorder=300)
+        axx[2,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+         #Subplot 3,0: Sensible Fluxes
+        axx[3,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[3,0].grid(alpha=0.8)
+        axx[3,0].fill_between(x=resample_coords, y1=q10.δrhf, y2=q90.δrhf, color='lightgrey',  zorder=1)
+        h5 = axx[3,0].scatter(x=resample_coords, y=means.δrhf, s=sizes, c='darkblue',zorder=200)
+        axx[3,0].plot(resample_coords, means.δrhf, color='darkblue',zorder=200)
+        
+        axx[3,0].fill_between(x=resample_coords, y1=q10.δshf, y2=q90.δshf, color='orchid',  alpha=0.3, zorder=8)
+        h4 = axx[3,0].scatter(x=resample_coords, y=means.δshf, s=sizes, c='purple',zorder=200)
+        axx[3,0].plot(resample_coords, means.δshf, color='purple',zorder=200)
+        axx[3,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[3,0].set_xticks(ticks)
+        axx[3,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,0].legend([h5,h4],['Gosnell Rain','COARE Turbulent'], loc='upper left')
+        axx[3,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$', fontsize=panel_font)
+        axx[3,0].set_title('Sensible Heat Flux',fontsize=title_font)
+        axx[3,0].text(panel_x, panel_y, '(d)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,0].transAxes, zorder=300)
+        axx[3,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+        
+        #--------------RIGHT SIDE---------------
+        
+        #Subplot 0,1: Air Temp
+        axx[0,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[0,1].grid(alpha=0.8)
+        axx[0,1].fill_between(x=resample_coords, y1=q10.δT02, y2=q90.δT02, color='lightgrey', zorder=0)
+        axx[0,1].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
+        axx[0,1].plot(resample_coords, means.δT02, color='tomato',zorder=200)
+        axx[0,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,1].set_ylim([-2.5,0.5])
+        axx[0,1].set_xticks(ticks)
+        axx[0,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[0,1].set_ylabel('$\delta T_{air} (^\circ C)$', fontsize=panel_font)
+        axx[0,1].set_title('Air Temperature',fontsize=title_font)
+        axx[0,1].text(panel_x, panel_y, '(e)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,1].transAxes, zorder=300)
+        
+        #Subplot 1,1: Wind Speed
+        axx[1,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[1,1].grid(alpha=0.8)
+        axx[1,1].fill_between(x=resample_coords, y1=q10.δwspd, y2=q90.δwspd, color='lightgrey', zorder=0)
+        axx[1,1].scatter(x=resample_coords, y=means.δwspd, s=sizes, c='darkslategray',zorder=200)
+        axx[1,1].plot(resample_coords, means.δwspd, color='darkslategray',zorder=200)
+        axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,1].set_xticks(ticks)
+        axx[1,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,1].set_ylabel('$\delta U (m/s)$', fontsize=panel_font)
+        axx[1,1].set_title('Wind Speed',fontsize=title_font)
+        axx[1,1].text(panel_x, panel_y, '(f)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,1].transAxes, zorder=300)
+        axx[1,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 2,1: δQ
+        axx[2,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[2,1].grid(alpha=0.8)
+        axx[2,1].fill_between(x=resample_coords, y1=q10.δQ02, y2=q90.δQ02, color='lightgrey', zorder=0)
+        axx[2,1].scatter(x=resample_coords, y=means.δQ02, s=sizes, c='darkslateblue',zorder=200)
+        axx[2,1].plot(resample_coords, means.δQ02, color='darkslateblue',zorder=200)
+        axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,1].set_xticks(ticks)
+        axx[2,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,1].set_ylabel('$\delta Q_{2m} (g/kg)$', fontsize=panel_font)
+        axx[2,1].set_title('Specific Humidity',fontsize=title_font)
+        axx[2,1].text(panel_x, panel_y, '(g)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,1].transAxes, zorder=300)
+        axx[2,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 3,1: Bulk Salinity
+        axx[3,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[3,1].grid(alpha=0.8)
+        axx[3,1].fill_between(x=resample_coords, y1=q10.δSalTSG, y2=q90.δSalTSG, color='lightgrey', zorder=0)
+        h1 = axx[3,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=20)
+        axx[3,1].plot(resample_coords, means.δSalTSG, color='blue',zorder=20)
+        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[3,1].set_ylim([-0.18,0.28])
+        axx[3,1].set_xticks(ticks)
+        axx[3,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,1].set_ylabel('$\delta S_{bulk} (psu)$', fontsize=panel_font)
+        axx[3,1].set_title('Bulk Salinity (Ship TSG)',fontsize=title_font)
+        axx[3,1].text(panel_x, panel_y, '(h)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,1].transAxes, zorder=300)
+        axx[3,1].yaxis.set_tick_params(labelsize=panel_font)
+
+
+        plt.tight_layout()
+
+    return composite_event
+
+
+
+
+##################################################################################################
+
+def extract_composite_event_10panel(rain_event_list, sst_event_list, param_list, start, stop, spacing, plotflag, title):
+    '''
+    Revised extract_composite_event plotting the sea snake-initialized model results and changing some visualization.
+    This function takes all of the rain events and creates a single composite event by normalizing the timescale.
+    Timescale normalization is calculated as (current time - rain onset time)[minutes]/(minutes to max δSST).
+    The function then plots the composite event for 4 variables (air temp, sst, bulk temp, bulk salinity).
+
+    Inputs:
+        rain_event_list  - list of xarray datasets for each rain event
+        sst_event_list   - list of xarray datasets containing sst information for each rain event
+        param_list       - list of data variable names for which there is a δ{param} to be found in rain_event_list (should be same as the param_list input to calculate_deltas)
+        start            - desired start time in normalized coordinates (-2 recommended)
+        stop             - desired end time in normalized coordinates (8-12 recommended)
+        spacing          - step size ("bin size") for normalized time coordinates
+
+    Outputs:
+        composite_event  - xarray dataset with two dimensions - event number, and normalized timescale
+
+    Also puts out a plot of the composite events in air temp, sst, bulk temp, and bulk salinity.
+    '''
+
+    #initialize array of resampling coordinates
+    resample_coords = np.linspace(start, stop, num=int((stop-start)/spacing),endpoint=False)
+
+    #create new lists of datasets to do time-normalization on
+    sst_normed_list = copy.deepcopy(sst_event_list)
+    rain_normed_list = copy.deepcopy(rain_event_list)
+
+    #initialize master arrays (shaped by event # vs. normalized timescale)
+    #sst
+    normed_δsst = np.empty(shape=(len(rain_event_list),len(resample_coords)))
+    #rain_event variables
+    array_list = []
+    for param in param_list:
+        array_list.append(np.empty(shape=(len(rain_event_list),len(resample_coords))))
+
+    #cycle through rain events
+    for event_num in np.arange(0,len(rain_event_list)):
+        #find times of rain onset and max sst response
+        onset = rain_event_list[event_num].attrs['Rain Onset']
+        t_max_δsst = (sst_event_list[event_num].attrs['Time of max δsst'] - onset).astype('timedelta64[m]').astype('float64')
+
+        #normalized time = (current time - rain onset time)[minutes]/(minutes to max δSST)
+        rain_normtime = (rain_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst
+        sst_normtime  = ((sst_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst)
+
+        #replace index with normalized time variable in the new list
+        sst_normed_list[event_num]['index'] = sst_normtime
+        rain_normed_list[event_num]['index'] = rain_normtime
+
+        #interpolate data onto resampling coordinates
+        sst_interp = sst_normed_list[event_num].interp(index=resample_coords)
+        rain_interp = rain_normed_list[event_num].interp(index=resample_coords)
+
+        #insert data into row of master array
+        normed_δsst[event_num,:] = sst_interp.δsst.values
+        for idx in np.arange(0,len(param_list)):
+            param = param_list[idx]
+            array_list[idx][event_num,:] = rain_interp[f'δ{param}'].values
+
+    #create and fill new dataset containing normalized events
+    composite_event = xr.Dataset(coords={'index':resample_coords,
+                                         'event':np.arange(1,len(rain_event_list)+1)})
+    #sst
+    composite_event = composite_event.assign({'δsst':(['event','index'],normed_δsst)})
+    #rain event variables
+    for idx in np.arange(0,len(param_list)):
+        param = param_list[idx]
+        composite_event = composite_event.assign({f'δ{param}':(['event','index'],array_list[idx])})
+
+    #count the number of data points at each timestep to size plots
+    sizes = np.empty_like(resample_coords)
+    sizes_DC = np.empty_like(resample_coords)
+    for idx in np.arange(0,len(resample_coords)):
+        #count how many non-nan entries there are at this timestep
+        sizes[idx] = composite_event.δsst.sel(index=resample_coords[idx]).count().values.item()
+        sizes_DC[idx] = composite_event.δHsC.sel(index=resample_coords[idx]).count().values.item()
+    
+    #takes means and stds across all events
+    means = composite_event.mean(dim='event',skipna=True)
+    stds = composite_event.std(dim='event',skipna=True)
+    q10 = composite_event.quantile(0.1,dim='event')
+    q90 = composite_event.quantile(0.9,dim='event')
+    
+    means_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+    stds_DC = composite_event.where(~np.isnan(composite_event.δHsC)).std(dim='event',skipna=True)
+
+    if plotflag == 1:
+        #plot
+        fig,axx= plt.subplots(nrows=5,ncols=2,figsize=(17,17),facecolor='w')
+        ticks = np.arange(start,stop+1,1)
+        ticklabels = ticks.astype('str').tolist()
+        ticklabels[-start] = 'Onset'
+        ticklabels[-start + 1] = r'$ \delta SST_{max} $'
+        plt.suptitle(title, fontsize=24, y=0.92)
+
+        temp_ylims = [-0.9,0.15]
+        panel_x = 0.995
+        panel_y = 0.97
+        panel_font = 16
+        title_font = 18
+
+        #----------LEFT SIDE----------------
+        #Subplot 0,0: Rain Rate
+        axx[0,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[0,0].grid(alpha=0.8)
+        axx[0,0].fill_between(x=resample_coords, y1=q10.δPrecip, y2=q90.δPrecip, color='lightgrey',zorder=1)
+        axx[0,0].plot(resample_coords, means.δPrecip, color='C0',zorder=100)
+        sc = axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
+        
+        axx[0,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,0].set_ylim([-1,23])
+        axx[0,0].set_xticks(ticks)
+        axx[0,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$', fontsize=panel_font)
+        axx[0,0].set_title('Rain Rate',fontsize=title_font)
+        axx[0,0].legend(*sc.legend_elements("sizes", num=5),title='# of Events',loc='upper left', framealpha=0.9).set_zorder(1000)
+        axx[0,0].text(panel_x, panel_y, '(a)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,0].transAxes, zorder=300)
+        axx[0,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 1,0: δSST
+        axx[1,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[1,0].grid(alpha=0.8)
+        axx[1,0].fill_between(x=resample_coords, y1=q10.δsst, y2=q90.δsst, color='lightgrey',zorder=1)
+        axx[1,0].plot(resample_coords, means.δsst, color='red',zorder=100)
+        h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes*0.8, marker='v', facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
+        h3 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_vF_SS, s=sizes, marker='o', facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots Bellenger model (Original)
+        h4 = axx[1,0].scatter(x=resample_coords, y=means.δt_int_SS, s=sizes+2, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model (Modified)
+
+        axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,0].set_xticks(ticks)
+        axx[1,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[1,0].set_ylabel('$δT_{skin}$ ($^\circ C$)', fontsize=panel_font)
+        axx[1,0].set_ylim(temp_ylims)
+        axx[1,0].set_title('Skin Temperature',fontsize=title_font)
+        axx[1,0].legend([h1,h2,h3,h4],['Observed by KT-15 (10μm)', 'COARE3.5 Model', 'Original Bellenger Model', 'Modified Bellenger Model'])
+        axx[1,0].text(panel_x, panel_y, '(b)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,0].transAxes, zorder=300)
+        axx[1,0].yaxis.set_tick_params(labelsize=panel_font)
+
+        #Subplot 2,0: δT_bulk (sea snake)
+        axx[2,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[2,0].grid(alpha=0.8)
+        axx[2,0].fill_between(x=resample_coords, y1=q10.δTsea, y2=q90.δTsea, color='lightgrey', zorder=1)
+        axx[2,0].plot(resample_coords, means.δTsea, color='darkred',zorder=100)
+        h3 = axx[2,0].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+        h4 = axx[2,0].scatter(x=resample_coords, y=means.δTseaTSG, s=sizes, c='k',marker='^',zorder=100)
+        axx[2,0].plot(resample_coords, means.δTseaTSG, color='k',linestyle='--', zorder=100)
+        axx[2,0].legend([h3,h4],['Sea Snake (5cm)', 'Ship TSG (5m)'])
+
+        axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,0].set_xticks(ticks)
+        axx[2,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[2,0].set_ylabel('$\delta T_{bulk}$ $(^\circ C)$', fontsize=panel_font)
+        axx[2,0].set_title('Bulk Sea Temperature',fontsize=title_font)
+        axx[2,0].text(panel_x, panel_y, '(c)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,0].transAxes, zorder=300)
+        axx[2,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+
+        #Subplot 3,0: Sensible Fluxes
+        axx[3,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[3,0].grid(alpha=0.8)
+        axx[3,0].fill_between(x=resample_coords, y1=q10.δrhf, y2=q90.δrhf, color='lightgrey',  zorder=1)
+        h5 = axx[3,0].scatter(x=resample_coords, y=means.δrhf, s=sizes, c='darkblue',zorder=200)
+        axx[3,0].plot(resample_coords, means.δrhf, color='darkblue',zorder=200)
+        
+        axx[3,0].fill_between(x=resample_coords, y1=q10.δshf, y2=q90.δshf, color='orchid',  alpha=0.3, zorder=8)
+        h4 = axx[3,0].scatter(x=resample_coords, y=means.δshf, s=sizes, facecolors='none', edgecolors='purple',zorder=200)
+        axx[3,0].plot(resample_coords, means.δshf, color='purple',zorder=200)
+        axx[3,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[3,0].set_xticks(ticks)
+        axx[3,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,0].legend([h5,h4],['Gosnell Rain','COARE Turbulent'], loc='upper left')
+        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$', fontsize=panel_font)
+        axx[3,0].set_title('Sensible Heat Flux',fontsize=title_font)
+        axx[3,0].text(panel_x, panel_y, '(d)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,0].transAxes, zorder=300)
+        axx[3,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+        
+        #Subplot 4,0: Tskin - Tair
+        axx[4,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[4,0].grid(alpha=0.8)
+        axx[4,0].fill_between(x=resample_coords, y1=q10.δΔT_skin_air, y2=q90.δΔT_skin_air, color='lightgrey', zorder=0)
+        axx[4,0].scatter(x=resample_coords, y=means.δΔT_skin_air, s=sizes, c='C3',zorder=200)
+        axx[4,0].plot(resample_coords, means.δΔT_skin_air, color='C3',zorder=200)
+        axx[4,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[4,0].set_xticks(ticks)
+        axx[4,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[4,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[4,0].set_ylabel('$\delta$ $\Delta T$ $(^\circ C)$', fontsize=panel_font)
+        axx[4,0].set_title('$T_{skin} - T_{air}$',fontsize=title_font)
+        axx[4,0].text(panel_x, panel_y, '(e)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[4,0].transAxes, zorder=300)
+        axx[4,0].yaxis.set_tick_params(labelsize=panel_font)
+        axx[4,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+
+
+        
+        #--------------RIGHT SIDE---------------
+        #Subplot 0,1: Wind Speed
+        axx[0,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[0,1].grid(alpha=0.8)
+        axx[0,1].fill_between(x=resample_coords, y1=q10.δwspd, y2=q90.δwspd, color='lightgrey', zorder=0)
+        axx[0,1].scatter(x=resample_coords, y=means.δwspd, s=sizes, c='darkslategray',zorder=200)
+        axx[0,1].plot(resample_coords, means.δwspd, color='darkslategray',zorder=200)
+        axx[0,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,1].set_xticks(ticks)
+        axx[0,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,1].set_ylabel('$\delta U$ $(m/s)$', fontsize=panel_font)
+        axx[0,1].set_title('Wind Speed',fontsize=title_font)
+        axx[0,1].text(panel_x, panel_y, '(f)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,1].transAxes, zorder=300)
+        axx[0,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 1,1: Air Temp
+        axx[1,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[1,1].grid(alpha=0.8)
+        axx[1,1].fill_between(x=resample_coords, y1=q10.δT02, y2=q90.δT02, color='lightgrey', zorder=0)
+        axx[1,1].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
+        axx[1,1].plot(resample_coords, means.δT02, color='tomato',zorder=200)
+        axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,1].set_ylim([-2.5,0.5])
+        axx[1,1].set_xticks(ticks)
+        axx[1,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[1,1].set_ylabel('$\delta T_{air}$ $(^\circ C)$', fontsize=panel_font)
+        axx[1,1].set_title('Air Temperature',fontsize=title_font)
+        axx[1,1].yaxis.set_tick_params(labelsize=panel_font)
+        axx[1,1].text(panel_x, panel_y, '(g)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,1].transAxes, zorder=300)
         
         #Subplot 2,1: Bulk Salinity
-        #axx[2,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
-        #axx[2,1].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
-        #axx[2,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=200)
-        #axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[2,1].grid(alpha=0.8)
+        axx[2,1].fill_between(x=resample_coords, y1=q10.δSalTSG, y2=q90.δSalTSG, color='lightgrey', zorder=0)
+        h1 = axx[2,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=20)
+        axx[2,1].plot(resample_coords, means.δSalTSG, color='blue',zorder=20)
+        axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
         #axx[2,1].set_ylim([-0.18,0.28])
-        #axx[2,1].set_xticks(ticks)
-        #axx[2,1].set_xticklabels(ticklabels)
-        #axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
-        #axx[2,1].set_ylabel('$\delta S_{bulk} (psu)$')
-        #axx[2,1].set_title('Bulk Salinity (Ship TSG)')
+        axx[2,1].set_xticks(ticks)
+        axx[2,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[2,1].set_ylabel('$\delta S_{5m}$ $(psu)$', fontsize=panel_font)
+        axx[2,1].set_title('Bulk Salinity (Ship TSG)',fontsize=title_font)
+        axx[2,1].text(panel_x, panel_y, '(h)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,1].transAxes, zorder=300)
+        axx[2,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 3,1: Specific Humidity
+        axx[3,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[3,1].grid(alpha=0.8)
+        axx[3,1].fill_between(x=resample_coords, y1=q10.δQ02, y2=q90.δQ02, color='lightgrey', zorder=0)
+        axx[3,1].scatter(x=resample_coords, y=means.δQ02, s=sizes, c='darkslateblue',zorder=200)
+        axx[3,1].plot(resample_coords, means.δQ02, color='darkslateblue',zorder=200)
+        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[3,1].set_xticks(ticks)
+        axx[3,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,1].set_ylabel('$\delta q_{air}$ $(g/kg)$', fontsize=panel_font)
+        axx[3,1].set_title('Specific Humidity',fontsize=title_font)
+        axx[3,1].text(panel_x, panel_y, '(i)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,1].transAxes, zorder=300)
+        axx[3,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 4,1: Qsat(Tskin) - Qair
+        axx[4,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=10)
+        axx[4,1].grid(alpha=0.8)
+        axx[4,1].fill_between(x=resample_coords, y1=q10.δΔq_skin_air, y2=q90.δΔq_skin_air, color='lightgrey', zorder=0)
+        axx[4,1].scatter(x=resample_coords, y=means.δΔq_skin_air, s=sizes, c='k',zorder=200)
+        axx[4,1].plot(resample_coords, means.δΔq_skin_air, color='k',zorder=200)
+        axx[4,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[4,1].set_xticks(ticks)
+        axx[4,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[4,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[4,1].set_ylabel('$\delta$ $\Delta q$ $(g/kg)$', fontsize=panel_font)
+        axx[4,1].set_title('$q_{sat}(T_{skin}) - q_{air}$',fontsize=title_font)
+        axx[4,1].text(panel_x, panel_y, '(j)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[4,1].transAxes, zorder=300)
+        axx[4,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+
+        #plt.tight_layout()
+        
+        plt.subplots_adjust(hspace=0.4)
+
+    return composite_event
+
+
+
+
+##################################################################################################
+
+def extract_composite_event_OLD(rain_event_list, sst_event_list, param_list, start, stop, spacing, plotflag, title):
+    '''
+    OLD COPY JUST IN CASE
+    This function takes all of the rain events and creates a single composite event by normalizing the timescale.
+    Timescale normalization is calculated as (current time - rain onset time)[minutes]/(minutes to max δSST).
+    The function then plots the composite event for 4 variables (air temp, sst, bulk temp, bulk salinity).
+
+    Inputs:
+        rain_event_list  - list of xarray datasets for each rain event
+        sst_event_list   - list of xarray datasets containing sst information for each rain event
+        param_list       - list of data variable names for which there is a δ{param} to be found in rain_event_list (should be same as the param_list input to calculate_deltas)
+        start            - desired start time in normalized coordinates (-2 recommended)
+        stop             - desired end time in normalized coordinates (8-12 recommended)
+        spacing          - step size ("bin size") for normalized time coordinates
+
+    Outputs:
+        composite_event  - xarray dataset with two dimensions - event number, and normalized timescale
+
+    Also puts out a plot of the composite events in air temp, sst, bulk temp, and bulk salinity.
+    '''
+
+    #initialize array of resampling coordinates
+    resample_coords = np.linspace(start, stop, num=int((stop-start)/spacing),endpoint=False)
+
+    #create new lists of datasets to do time-normalization on
+    sst_normed_list = copy.deepcopy(sst_event_list)
+    rain_normed_list = copy.deepcopy(rain_event_list)
+
+    #initialize master arrays (shaped by event # vs. normalized timescale)
+    #sst
+    normed_δsst = np.empty(shape=(len(rain_event_list),len(resample_coords)))
+    #rain_event variables
+    array_list = []
+    for param in param_list:
+        array_list.append(np.empty(shape=(len(rain_event_list),len(resample_coords))))
+
+    #cycle through rain events
+    for event_num in np.arange(0,len(rain_event_list)):
+        #find times of rain onset and max sst response
+        onset = rain_event_list[event_num].attrs['Rain Onset']
+        t_max_δsst = (sst_event_list[event_num].attrs['Time of max δsst'] - onset).astype('timedelta64[m]').astype('float64')
+
+        #normalized time = (current time - rain onset time)[minutes]/(minutes to max δSST)
+        rain_normtime = (rain_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst
+        sst_normtime  = ((sst_event_list[event_num].index - onset).values.astype('timedelta64[s]').astype('float64')/60/t_max_δsst)
+
+        #replace index with normalized time variable in the new list
+        sst_normed_list[event_num]['index'] = sst_normtime
+        rain_normed_list[event_num]['index'] = rain_normtime
+
+        #interpolate data onto resampling coordinates
+        sst_interp = sst_normed_list[event_num].interp(index=resample_coords)
+        rain_interp = rain_normed_list[event_num].interp(index=resample_coords)
+
+        #insert data into row of master array
+        normed_δsst[event_num,:] = sst_interp.δsst.values
+        for idx in np.arange(0,len(param_list)):
+            param = param_list[idx]
+            array_list[idx][event_num,:] = rain_interp[f'δ{param}'].values
+
+    #create and fill new dataset containing normalized events
+    composite_event = xr.Dataset(coords={'index':resample_coords,
+                                         'event':np.arange(1,len(rain_event_list)+1)})
+    #sst
+    composite_event = composite_event.assign({'δsst':(['event','index'],normed_δsst)})
+    #rain event variables
+    for idx in np.arange(0,len(param_list)):
+        param = param_list[idx]
+        composite_event = composite_event.assign({f'δ{param}':(['event','index'],array_list[idx])})
+
+    #count the number of data points at each timestep to size plots
+    sizes = np.empty_like(resample_coords)
+    sizes_DC = np.empty_like(resample_coords)
+    for idx in np.arange(0,len(resample_coords)):
+        #count how many non-nan entries there are at this timestep
+        sizes[idx] = composite_event.δsst.sel(index=resample_coords[idx]).count().values.item()
+        sizes_DC[idx] = composite_event.δHsC.sel(index=resample_coords[idx]).count().values.item()
+        
+    #takes means and stds across all events
+    means = composite_event.mean(dim='event',skipna=True)
+    stds = composite_event.std(dim='event',skipna=True)
+    
+    means_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+    stds_DC = composite_event.where(~np.isnan(composite_event.δHsC)).mean(dim='event',skipna=True)
+
+    if plotflag == 1:
+        #plot
+        fig,axx= plt.subplots(nrows=4,ncols=2,figsize=(16,12),facecolor='w')
+        ticks = np.arange(start,stop+1,1)
+        ticklabels = ticks.astype('str').tolist()
+        ticklabels[-start] = 'Onset'
+        ticklabels[-start + 1] = r'$ \delta SST_{max} $'
+        plt.suptitle(title, y=0.98, fontsize=18)
+
+        temp_ylims = [-1,0.2]
+        panel_x = 0.995
+        panel_y = 0.97
+        panel_font = 14
+        title_font = 16
+
+        #----------LEFT SIDE----------------
+        #Subplot 0,0: Rain Rate
+        axx[0,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[0,0].grid(alpha=0.2)
+        axx[0,0].errorbar(x=resample_coords, y=means.δPrecip, yerr=stds.δPrecip, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        sc = axx[0,0].scatter(x=resample_coords, y=means.δPrecip, s=sizes, c='C0',zorder=200)
+        axx[0,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,0].set_ylim([-12,31])
+        axx[0,0].set_xticks(ticks)
+        axx[0,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,0].set_ylabel('Rain Rate $(mm/hr)$', fontsize=panel_font)
+        axx[0,0].set_title('Rain Rate',fontsize=title_font)
+        axx[0,0].legend(*sc.legend_elements("sizes", num=6),title='# of Events',loc='upper left', framealpha=0.9).set_zorder(1000)
+        axx[0,0].text(panel_x, panel_y, '(a)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,0].transAxes, zorder=300)
+        axx[0,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+
+        
+        #Subplot 1,0: δSST
+        axx[1,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[1,0].grid(alpha=0.2)
+        axx[1,0].errorbar(x=resample_coords, y=means.δsst, yerr=stds.δsst, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h1 = axx[1,0].scatter(x=resample_coords, y=means.δsst, s=sizes, c='red',zorder=200)
+        h2 = axx[1,0].scatter(x=resample_coords, y=means.δSST, s=sizes*0.8, marker='v', facecolors='none', edgecolors='darkred' ,zorder=150) #plots COARE skin-corrected SST
+        h3 = axx[1,0].scatter(x=resample_coords, y=means.δSSTrain, s=sizes, facecolors='none', edgecolors='darkmagenta' ,zorder=150) #plots COARE skin-corrected SST + rain effect
+        h4 = axx[1,0].scatter(x=resample_coords, y=means.δt_int, s=sizes, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model SST
+
+        axx[1,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,0].set_xticks(ticks)
+        axx[1,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,0].set_ylabel('δSST ($^\circ C$)', fontsize=panel_font)
+        axx[1,0].set_ylim(temp_ylims)
+        axx[1,0].set_title('Skin SST',fontsize=title_font)
+        axx[1,0].legend([h1,h2,h3,h4],['Observed by KT-15 (10μm)', 'COARE (no rain)','COARE (with rain)', 'Bellenger Model'])
+        #axx[1,0].legend([h1,h2],['Observed by KT-15 (10μm)', 'COARE'])
+        axx[1,0].text(panel_x, panel_y, '(b)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,0].transAxes, zorder=300)
+        axx[1,0].yaxis.set_tick_params(labelsize=panel_font)
+
+        #Subplot 2,0: δT_bulk (sea snake)
+        axx[2,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[2,0].grid(alpha=0.2)
+        axx[2,0].errorbar(x=resample_coords, y=means.δTsea, yerr=stds.δTsea, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h3 = axx[2,0].scatter(x=resample_coords, y=means.δTsea, s=sizes, c='darkred',zorder=200)
+        h4 = axx[2,0].scatter(x=resample_coords, y=means.δTseaTSG, s=sizes, c='k',marker='1',zorder=100)
+        h5 = axx[2,0].scatter(x=resample_coords, y=means.δt_int, s=sizes, marker='*', facecolors='none', edgecolors='navy' ,zorder=200) #plots Bellenger model SST
+        axx[2,0].legend([h3,h4,h5],['Sea Snake (5cm)', 'Ship TSG (5m)', 'Bellenger Model'])
+
+        axx[2,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,0].set_xticks(ticks)
+        axx[2,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,0].set_ylabel('$\delta T_{bulk} (^\circ C)$', fontsize=panel_font)
+        #axx[2,0].set_ylim(temp_ylims)
+        axx[2,0].set_title('Bulk Sea Temperature',fontsize=title_font)
+        axx[2,0].text(panel_x, panel_y, '(c)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,0].transAxes, zorder=300)
+        axx[2,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+         #Subplot 3,0: Sensible Fluxes
+        axx[3,0].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[3,0].grid(alpha=0.2)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δHsC, yerr=stds.δHsC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=300)
+        h3 = axx[3,0].scatter(x=resample_coords, y=means_DC.δHsC, s=sizes_DC, c='forestgreen',zorder=400)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δshf, yerr=stds.δshf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h4 = axx[3,0].scatter(x=resample_coords, y=means_DC.δshf, s=sizes_DC, c='purple',zorder=200)
+        axx[3,0].errorbar(x=resample_coords, y=means_DC.δrhf, yerr=stds.δrhf, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        h5 = axx[3,0].scatter(x=resample_coords, y=means_DC.δrhf, s=sizes_DC, c='darkblue',zorder=200)
+        axx[3,0].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[3,0].set_xticks(ticks)
+        axx[3,0].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,0].legend([h3,h4,h5],['DC','COARE','Gosnell Rain'])
+        #axx[3,0].legend([h4],['COARE'],loc='upper left')
+        axx[3,0].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,0].set_ylabel('$\delta$ Flux $(W/m^2)$', fontsize=panel_font)
+        axx[3,0].set_title('Sensible Fluxes',fontsize=title_font)
+        axx[3,0].text(panel_x, panel_y, '(d)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,0].transAxes, zorder=300)
+        axx[3,0].yaxis.set_tick_params(labelsize=panel_font)
+        
+        
+        #--------------RIGHT SIDE---------------
+        
+        #Subplot 0,1: Air Temp
+        axx[0,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[0,1].grid(alpha=0.2)
+        axx[0,1].errorbar(x=resample_coords, y=means.δT02, yerr=stds.δT02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[0,1].scatter(x=resample_coords, y=means.δT02, s=sizes, c='tomato',zorder=200)
+        axx[0,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[0,1].set_ylim([-2.3,0.3])
+        axx[0,1].set_xticks(ticks)
+        axx[0,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[0,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[0,1].set_ylabel('$\delta T_{air} (^\circ C)$', fontsize=panel_font)
+        axx[0,1].set_title('Air Temperature',fontsize=title_font)
+        axx[0,1].text(panel_x, panel_y, '(e)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[0,1].transAxes, zorder=300)
+        
+        #Subplot 1,1: Wind Speed
+        axx[1,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[1,1].grid(alpha=0.2)
+        axx[1,1].errorbar(x=resample_coords, y=means.δwspd, yerr=stds.δwspd, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[1,1].scatter(x=resample_coords, y=means.δwspd, s=sizes, c='darkslategray',zorder=200)
+        axx[1,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[1,1].set_xticks(ticks)
+        axx[1,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[1,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[1,1].set_ylabel('$\delta U (m/s)$', fontsize=panel_font)
+        axx[1,1].set_title('Wind Speed',fontsize=title_font)
+        axx[1,1].text(panel_x, panel_y, '(f)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[1,1].transAxes, zorder=300)
+        axx[1,1].yaxis.set_tick_params(labelsize=panel_font)
+        
+        #Subplot 2,1: δQ
+        axx[2,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[2,1].grid(alpha=0.2)
+        axx[2,1].errorbar(x=resample_coords, y=means.δQ02, yerr=stds.δQ02, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[2,1].scatter(x=resample_coords, y=means.δQ02, s=sizes, c='darkslateblue',zorder=200)
+        axx[2,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        axx[2,1].set_xticks(ticks)
+        axx[2,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        #axx[2,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[2,1].set_ylabel('$\delta Q_{2m} (g/kg)$', fontsize=panel_font)
+        axx[2,1].set_title('Specific Humidity',fontsize=title_font)
+        axx[2,1].text(panel_x, panel_y, '(g)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[2,1].transAxes, zorder=300)
+        axx[2,1].yaxis.set_tick_params(labelsize=panel_font)
+
+        
+        #Subplot 3,1: Latent fluxes
+        #axx[3,1].plot(resample_coords, np.zeros(len(resample_coords)),linewidth = 0.5, zorder=0)
+        #axx[3,1].errorbar(x=resample_coords, y=means_DC.δHlC, yerr=stds_DC.δHlC, fmt='-g', ecolor='g', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #h1 = axx[3,1].scatter(x=resample_coords, y=means_DC.δHlC, s=sizes_DC, c='forestgreen',zorder=200)
+        #axx[3,1].errorbar(x=resample_coords, y=means_DC.δlhf, yerr=stds.δlhf, fmt='-m', ecolor='m', linewidth=0.5, capsize=10*spacing, zorder=100)
+        #h2 = axx[3,1].scatter(x=resample_coords, y=means_DC.δlhf, s=sizes_DC, c='purple',zorder=200)
+        #axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[2,0].set_ylim([-80,300])
+        #axx[3,1].set_xticks(ticks)
+        #axx[3,1].set_xticklabels(ticklabels)
+        #axx[3,1].legend([h1,h2],['DC','COARE'])
+        #axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$')
+        #axx[3,1].set_ylabel('$\delta$ Flux $(W/m^2)$')
+        #axx[3,1].set_title('Latent Fluxes')
+        
+        
+        #Subplot 3,1: Bulk Salinity
+        axx[3,1].hlines(y=0,xmin=start-1,xmax=stop+1,color='k',linewidth = 0.5,zorder=0)
+        axx[3,1].grid(alpha=0.2)
+        axx[3,1].errorbar(x=resample_coords, y=means.δSalTSG, yerr=stds.δSalTSG, fmt='-k', ecolor='k', linewidth=0.5, capsize=10*spacing, zorder=100)
+        axx[3,1].scatter(x=resample_coords, y=means.δSalTSG, s=sizes, c='blue',zorder=200)
+        axx[3,1].set_xlim([resample_coords[0],resample_coords[-1]])
+        #axx[3,1].set_ylim([-0.18,0.28])
+        axx[3,1].set_xticks(ticks)
+        axx[3,1].set_xticklabels(ticklabels, fontsize=panel_font)
+        axx[3,1].set_xlabel(r'Normalized Time $ (t-t_{onset})/t_{δSST_{max}}$', fontsize=panel_font)
+        axx[3,1].set_ylabel('$\delta S_{bulk} (psu)$', fontsize=panel_font)
+        axx[3,1].set_title('Bulk Salinity (Ship TSG)',fontsize=title_font)
+        axx[3,1].text(panel_x, panel_y, '(h)', fontsize=panel_font, horizontalalignment='right', verticalalignment='top', transform=axx[3,1].transAxes, zorder=300)
+        axx[3,1].yaxis.set_tick_params(labelsize=panel_font)
 
 
         #Subplot 2,0: Sensible Heat Flux Due to Rain
